@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PianoLearn</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Library Screen -->
+    <div id="screen-library" class="screen active">
+        <header>
+            <h1>PianoLearn</h1>
+        </header>
+
+        <div class="search-bar">
+            <input type="text" id="search" placeholder="Buscar cancion...">
+        </div>
+
+        <div class="song-list" id="songList"></div>
+
+        <div class="upload-section">
+            <label for="uploadMidi" class="upload-btn">Subir MIDI</label>
+            <input type="file" id="uploadMidi" accept=".mid,.midi" hidden>
+        </div>
+
+        <nav class="mode-selector">
+            <button class="mode-btn active" data-mode="standalone">Standalone</button>
+            <button class="mode-btn" data-mode="synthesia">Synthesia</button>
+            <button class="mode-btn" data-mode="freeplay">Free Play</button>
+        </nav>
+    </div>
+
+    <!-- Player Screen -->
+    <div id="screen-player" class="screen">
+        <header class="player-header">
+            <button id="btnBack" class="icon-btn">&larr;</button>
+            <span id="songTitle">Song Name</span>
+            <div class="player-controls">
+                <button id="btnPause" class="icon-btn">&#10074;&#10074;</button>
+                <button id="btnStop" class="icon-btn">&#9632;</button>
+                <button id="btnSettings" class="icon-btn">&#9881;</button>
+            </div>
+        </header>
+
+        <canvas id="pianoCanvas"></canvas>
+
+        <div class="player-footer">
+            <div class="mode-toggle">
+                <label>Modo:</label>
+                <select id="playMode">
+                    <option value="karaoke">Karaoke</option>
+                    <option value="learning">Aprendizaje</option>
+                </select>
+            </div>
+            <div class="speed-control">
+                <label>Vel:</label>
+                <input type="range" id="speedSlider" min="25" max="150" value="100">
+                <span id="speedValue">100%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <h2>Ajustes</h2>
+            <div class="setting-row">
+                <label>Brillo LEDs</label>
+                <input type="range" id="brightnessSlider" min="0" max="255" value="50">
+            </div>
+            <div class="setting-row">
+                <label>Color mano derecha</label>
+                <input type="color" id="colorRight" value="#0064ff">
+            </div>
+            <div class="setting-row">
+                <label>Color mano izquierda</label>
+                <input type="color" id="colorLeft" value="#00ff64">
+            </div>
+            <button id="btnCloseSettings" class="close-btn">Cerrar</button>
+        </div>
+    </div>
+
+    <script src="piano-canvas.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
