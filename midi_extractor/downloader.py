@@ -5,13 +5,30 @@ import sys
 import shutil
 import uuid
 
+# Extra paths to search for executables (deno, ffmpeg, etc.)
+_EXTRA_PATHS = [
+    os.path.join(os.path.expanduser("~"), ".deno", "bin"),
+    os.path.dirname(sys.executable),
+]
+
+
+def _get_env():
+    """Get environment with extra paths for subprocess calls."""
+    env = os.environ.copy()
+    extra = os.pathsep.join(p for p in _EXTRA_PATHS if os.path.isdir(p))
+    env["PATH"] = extra + os.pathsep + env.get("PATH", "")
+    return env
+
 
 def _find_executable(name: str) -> str:
     """Find executable in virtualenv Scripts dir first, then PATH."""
-    venv_dir = os.path.join(os.path.dirname(sys.executable))
-    venv_path = os.path.join(venv_dir, f"{name}.exe")
-    if os.path.isfile(venv_path):
-        return venv_path
+    for d in _EXTRA_PATHS:
+        path = os.path.join(d, f"{name}.exe")
+        if os.path.isfile(path):
+            return path
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            return path
     found = shutil.which(name)
     if found:
         return found
@@ -34,14 +51,11 @@ def download_audio(url: str, output_dir: str = "songs") -> str:
         url
     ]
 
-    env = os.environ.copy()
-    # Ensure virtualenv Scripts dir is in PATH for ffmpeg/ffprobe
-    venv_dir = os.path.dirname(sys.executable)
-    env["PATH"] = venv_dir + os.pathsep + env.get("PATH", "")
-
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_get_env(), timeout=300)
     if result.returncode != 0:
         raise RuntimeError(f"yt-dlp failed: {result.stderr}")
 
     wav_path = f"{output_path}.wav"
+    if not os.path.isfile(wav_path):
+        raise RuntimeError(f"yt-dlp did not produce WAV file: {wav_path}")
     return wav_path
