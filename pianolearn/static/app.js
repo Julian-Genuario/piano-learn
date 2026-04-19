@@ -1,7 +1,9 @@
 const API = '';
 let pianoCanvas = null;
+let pianoAudio = null;
 let ws = null;
 let currentMode = 'standalone';
+let prevActiveNotes = new Set();
 
 // --- Screen Management ---
 
@@ -44,8 +46,13 @@ async function loadSongs() {
 // --- Player ---
 
 async function playSong(name) {
+    // Init audio on user gesture (required by browsers)
+    if (!pianoAudio) pianoAudio = new PianoAudio();
+    pianoAudio.init();
+
     document.getElementById('songTitle').textContent = name;
     showScreen('screen-player');
+    prevActiveNotes = new Set();
     await fetch(`${API}/api/player/play/${encodeURIComponent(name)}`, { method: 'POST' });
     connectWebSocket();
 }
@@ -61,9 +68,28 @@ function connectWebSocket() {
         if (pianoCanvas) {
             pianoCanvas.update(data);
         }
+
+        // Audio: detect new and released notes
+        if (pianoAudio && pianoAudio.started) {
+            const currentNotes = new Set();
+            for (const n of (data.active || [])) {
+                currentNotes.add(n.note);
+                if (!prevActiveNotes.has(n.note)) {
+                    pianoAudio.noteOn(n.note, n.velocity || 100);
+                }
+            }
+            for (const note of prevActiveNotes) {
+                if (!currentNotes.has(note)) {
+                    pianoAudio.noteOff(note);
+                }
+            }
+            prevActiveNotes = currentNotes;
+        }
     };
 
     ws.onclose = () => {
+        if (pianoAudio) pianoAudio.stopAll();
+        prevActiveNotes = new Set();
         if (document.getElementById('screen-player').classList.contains('active')) {
             setTimeout(connectWebSocket, 1000);
         }
@@ -87,6 +113,8 @@ document.getElementById('uploadMidi').addEventListener('change', async (e) => {
 // --- Controls ---
 
 document.getElementById('btnBack').addEventListener('click', async () => {
+    if (pianoAudio) pianoAudio.stopAll();
+    prevActiveNotes = new Set();
     await fetch(`${API}/api/player/stop`, { method: 'POST' });
     if (ws) ws.close();
     showScreen('screen-library');
@@ -94,10 +122,14 @@ document.getElementById('btnBack').addEventListener('click', async () => {
 });
 
 document.getElementById('btnPause').addEventListener('click', async () => {
+    if (pianoAudio) pianoAudio.stopAll();
+    prevActiveNotes = new Set();
     await fetch(`${API}/api/player/pause`, { method: 'POST' });
 });
 
 document.getElementById('btnStop').addEventListener('click', async () => {
+    if (pianoAudio) pianoAudio.stopAll();
+    prevActiveNotes = new Set();
     await fetch(`${API}/api/player/stop`, { method: 'POST' });
 });
 
@@ -128,6 +160,8 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
         currentMode = btn.dataset.mode;
 
         if (currentMode === 'freeplay') {
+            if (!pianoAudio) pianoAudio = new PianoAudio();
+            pianoAudio.init();
             document.getElementById('songTitle').textContent = 'Free Play';
             showScreen('screen-player');
             connectWebSocket();
