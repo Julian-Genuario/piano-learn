@@ -141,6 +141,10 @@ document.getElementById('playMode').addEventListener('change', async (e) => {
     });
 });
 
+document.getElementById('volumeSlider').addEventListener('input', (e) => {
+    if (pianoAudio) pianoAudio.setVolume(parseInt(e.target.value) / 100);
+});
+
 document.getElementById('speedSlider').addEventListener('input', async (e) => {
     const speed = parseInt(e.target.value) / 100;
     document.getElementById('speedValue').textContent = e.target.value + '%';

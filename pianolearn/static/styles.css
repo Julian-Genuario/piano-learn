@@ -145,7 +145,7 @@ h1 { font-size: 22px; color: #4fc3f7; }
     border-top: 1px solid #222;
     gap: 16px;
 }
-.mode-toggle, .speed-control { display: flex; align-items: center; gap: 8px; }
+.mode-toggle, .speed-control, .volume-control { display: flex; align-items: center; gap: 8px; }
 .mode-toggle label, .speed-control label { font-size: 13px; color: #888; }
 select, input[type="range"] {
     background: #1a1a3e;
