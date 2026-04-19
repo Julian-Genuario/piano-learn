@@ -5,6 +5,7 @@ import sys
 
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from pianolearn.song_library import SongLibrary
@@ -212,10 +213,14 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
             pass
 
     # --- Static files ---
-
+    # Mount at /static to avoid capturing WebSocket and API routes
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.exists(static_dir):
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+        @app.get("/")
+        async def serve_index():
+            return FileResponse(os.path.join(static_dir, "index.html"))
 
     return app
 
