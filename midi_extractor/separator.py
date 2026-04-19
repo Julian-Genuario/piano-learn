@@ -2,12 +2,13 @@
 import subprocess
 import glob
 import os
+import sys
 
 
 def separate_piano(wav_path: str, output_dir: str = "separated") -> str:
     """Isolate piano from a WAV file using demucs. Returns path to piano stem."""
     cmd = [
-        "python", "-m", "demucs",
+        sys.executable, "-m", "demucs",
         "--two-stems", "other",
         "-o", output_dir,
         wav_path

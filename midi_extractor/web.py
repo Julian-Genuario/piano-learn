@@ -13,6 +13,7 @@ app = FastAPI(title="PianoLearn MIDI Extractor")
 templates = Jinja2Templates(directory="midi_extractor/templates")
 
 jobs: dict[str, dict] = {}
+_extracting = threading.Lock()
 
 
 class ExtractRequest(BaseModel):
@@ -24,6 +25,9 @@ class ExtractRequest(BaseModel):
 
 def extract_midi_background(job_id: str, req: ExtractRequest):
     """Run extraction in background thread, updating job status."""
+    if not _extracting.acquire(blocking=False):
+        jobs[job_id] = {"status": "error", "progress": "Ya hay una extraccion en curso. Espera a que termine."}
+        return
     try:
         def on_progress(msg: str):
             jobs[job_id]["progress"] = msg
@@ -48,6 +52,8 @@ def extract_midi_background(job_id: str, req: ExtractRequest):
         }
     except Exception as e:
         jobs[job_id] = {"status": "error", "progress": str(e)}
+    finally:
+        _extracting.release()
 
 
 @app.get("/", response_class=HTMLResponse)

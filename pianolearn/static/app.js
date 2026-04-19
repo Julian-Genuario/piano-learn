@@ -22,7 +22,7 @@ async function loadSongs() {
     list.innerHTML = '';
 
     if (songs.length === 0) {
-        list.innerHTML = '<div class="song-item"><span class="song-meta">No hay canciones. Subi un MIDI para empezar.</span></div>';
+        list.innerHTML = '<div class="empty-state"><div class="empty-icon">&#9835;</div><div class="empty-text">No hay canciones todavia.<br>Subi un MIDI para empezar.</div></div>';
         return;
     }
 

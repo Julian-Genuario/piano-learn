@@ -10,7 +10,16 @@
     <!-- Library Screen -->
     <div id="screen-library" class="screen active">
         <header>
-            <h1>PianoLearn</h1>
+            <div class="header-top">
+                <h1>PianoLearn</h1>
+                <label for="uploadMidi" class="upload-btn-header">+ Subir MIDI</label>
+                <input type="file" id="uploadMidi" accept=".mid,.midi" hidden>
+            </div>
+            <nav class="mode-selector">
+                <button class="mode-btn active" data-mode="standalone">Standalone</button>
+                <button class="mode-btn" data-mode="synthesia">Synthesia</button>
+                <button class="mode-btn" data-mode="freeplay">Free Play</button>
+            </nav>
         </header>
 
         <div class="search-bar">
@@ -18,17 +27,6 @@
         </div>
 
         <div class="song-list" id="songList"></div>
-
-        <div class="upload-section">
-            <label for="uploadMidi" class="upload-btn">Subir MIDI</label>
-            <input type="file" id="uploadMidi" accept=".mid,.midi" hidden>
-        </div>
-
-        <nav class="mode-selector">
-            <button class="mode-btn active" data-mode="standalone">Standalone</button>
-            <button class="mode-btn" data-mode="synthesia">Synthesia</button>
-            <button class="mode-btn" data-mode="freeplay">Free Play</button>
-        </nav>
     </div>
 
     <!-- Player Screen -->
