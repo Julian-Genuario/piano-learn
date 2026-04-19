@@ -1,5 +1,6 @@
 import uuid
 import threading
+import time
 from fastapi import FastAPI
 from fastapi.requests import Request
 from fastapi.responses import HTMLResponse
@@ -13,7 +14,7 @@ app = FastAPI(title="PianoLearn MIDI Extractor")
 templates = Jinja2Templates(directory="midi_extractor/templates")
 
 jobs: dict[str, dict] = {}
-_extracting = threading.Lock()
+_busy = False
 
 
 class ExtractRequest(BaseModel):
@@ -25,14 +26,14 @@ class ExtractRequest(BaseModel):
 
 def extract_midi_background(job_id: str, req: ExtractRequest):
     """Run extraction in background thread, updating job status."""
-    if not _extracting.acquire(blocking=False):
-        jobs[job_id] = {"status": "error", "progress": "Ya hay una extraccion en curso. Espera a que termine."}
-        return
+    global _busy
+    _busy = True
     try:
         def on_progress(msg: str):
             jobs[job_id]["progress"] = msg
+            jobs[job_id]["updated"] = time.time()
 
-        jobs[job_id] = {"status": "running", "progress": "Starting..."}
+        jobs[job_id] = {"status": "running", "progress": "Starting...", "updated": time.time()}
 
         midi_path = extract_midi(
             url=req.url,
@@ -53,7 +54,7 @@ def extract_midi_background(job_id: str, req: ExtractRequest):
     except Exception as e:
         jobs[job_id] = {"status": "error", "progress": str(e)}
     finally:
-        _extracting.release()
+        _busy = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -63,8 +64,10 @@ async def home(request: Request):
 
 @app.post("/extract")
 async def extract(req: ExtractRequest):
+    if _busy:
+        return {"error": "Ya hay una extraccion en curso. Espera a que termine."}
     job_id = uuid.uuid4().hex[:8]
-    thread = threading.Thread(target=extract_midi_background, args=(job_id, req))
+    thread = threading.Thread(target=extract_midi_background, args=(job_id, req), daemon=True)
     thread.start()
     return {"job_id": job_id}
 

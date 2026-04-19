@@ -43,18 +43,16 @@
         .progress-bar { height: 6px; background: #333; border-radius: 3px; margin-top: 8px; overflow: hidden; }
         .progress-bar-fill { height: 100%; background: #4fc3f7; width: 0%; transition: width 0.5s; border-radius: 3px; }
         .status-text { font-size: 14px; color: #aaa; }
-        .result { margin-top: 16px; padding: 12px; background: #1b5e20; border-radius: 8px; display: none; }
+        .timer { font-size: 12px; color: #666; margin-top: 6px; }
+        .result { margin-top: 16px; padding: 12px; background: #1b5e20; border-radius: 8px; display: none; font-size: 14px; }
         .result.active { display: block; }
         .result.error { background: #b71c1c; }
-        .history { margin-top: 24px; border-top: 1px solid #333; padding-top: 16px; }
-        .history h3 { font-size: 14px; color: #666; margin-bottom: 8px; }
-        .history-item { padding: 8px 0; font-size: 13px; color: #aaa; border-bottom: 1px solid #222; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>PianoLearn</h1>
-        <p class="subtitle">MIDI Extractor</p>
+        <p class="subtitle">MIDI Extractor - YouTube a MIDI</p>
         <form id="extractForm">
             <label for="url">URL de YouTube</label>
             <input type="url" id="url" placeholder="https://youtube.com/watch?v=..." required>
@@ -62,16 +60,16 @@
             <input type="text" id="name" placeholder="Fur Elise (opcional)">
             <div class="checkbox-row">
                 <input type="checkbox" id="separate">
-                <label for="separate" style="margin:0">Separar piano (varios instrumentos)</label>
+                <label for="separate" style="margin:0">Separar piano (mas lento, para videos con varios instrumentos)</label>
             </div>
             <button type="submit" id="submitBtn">Extraer MIDI</button>
         </form>
         <div class="progress" id="progress">
             <p class="status-text" id="statusText">Iniciando...</p>
             <div class="progress-bar"><div class="progress-bar-fill" id="progressFill"></div></div>
+            <p class="timer" id="timer"></p>
         </div>
         <div class="result" id="result"></div>
-        <div class="history" id="history"><h3>Conversiones recientes</h3></div>
     </div>
     <script>
         const form = document.getElementById('extractForm');
@@ -80,51 +78,113 @@
         const progressFill = document.getElementById('progressFill');
         const resultDiv = document.getElementById('result');
         const submitBtn = document.getElementById('submitBtn');
-        const historyDiv = document.getElementById('history');
+        const timerEl = document.getElementById('timer');
+        let startTime = 0;
+        let timerInterval = null;
+
         const progressMap = {
-            'Starting...': 5, 'Downloading audio...': 20, 'Separating piano with demucs...': 40,
-            'Transcribing to MIDI...': 70, 'Cleaning up...': 90, 'Syncing to Pi...': 95, 'Complete!': 100
+            'Starting...': 5,
+            'Downloading audio...': 20,
+            'Separating piano with demucs...': 40,
+            'Transcribing to MIDI...': 60,
+            'Cleaning up...': 90,
+            'Syncing to Pi...': 95,
+            'Complete!': 100,
+            'Done!': 100
         };
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+
+        function startTimer() {
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const elapsed = (Date.now() - startTime) / 1000;
+                timerEl.textContent = `Tiempo: ${formatTime(elapsed)}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+        }
+
+        function reset() {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Extraer MIDI';
+            progress.classList.remove('active');
+            stopTimer();
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
+            submitBtn.textContent = 'Extrayendo...';
             progress.classList.add('active');
             resultDiv.classList.remove('active');
+            startTimer();
+
             const body = {
                 url: document.getElementById('url').value,
                 name: document.getElementById('name').value || null,
                 separate: document.getElementById('separate').checked
             };
-            const res = await fetch('/extract', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-            const { job_id } = await res.json();
-            pollStatus(job_id, body.name || body.url);
+
+            try {
+                const res = await fetch('/extract', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                pollStatus(data.job_id);
+            } catch (err) {
+                showError('No se pudo conectar al servidor');
+            }
         });
-        async function pollStatus(jobId, songName) {
-            const res = await fetch(`/status/${jobId}`);
-            const data = await res.json();
-            statusText.textContent = data.progress || data.status;
-            progressFill.style.width = (progressMap[data.progress] || 50) + '%';
-            if (data.status === 'done') {
-                submitBtn.disabled = false;
-                resultDiv.textContent = `MIDI generado: ${data.midi_path}` + (data.synced ? ' (sincronizado a Pi)' : ' (solo local)');
-                resultDiv.classList.add('active');
-                resultDiv.classList.remove('error');
-                addHistory(songName);
-                return;
+
+        async function pollStatus(jobId) {
+            try {
+                const res = await fetch(`/status/${jobId}`);
+                const data = await res.json();
+
+                statusText.textContent = data.progress || data.status;
+                progressFill.style.width = (progressMap[data.progress] || 50) + '%';
+
+                if (data.status === 'done') {
+                    stopTimer();
+                    const elapsed = formatTime((Date.now() - startTime) / 1000);
+                    resultDiv.textContent = `MIDI generado: ${data.midi_path} (${elapsed})`;
+                    resultDiv.classList.add('active');
+                    resultDiv.classList.remove('error');
+                    reset();
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    showError(data.progress);
+                    return;
+                }
+
+                setTimeout(() => pollStatus(jobId), 2000);
+            } catch (err) {
+                showError('Se perdio la conexion con el servidor');
             }
-            if (data.status === 'error') {
-                submitBtn.disabled = false;
-                resultDiv.textContent = `Error: ${data.progress}`;
-                resultDiv.classList.add('active', 'error');
-                return;
-            }
-            setTimeout(() => pollStatus(jobId, songName), 1000);
         }
-        function addHistory(name) {
-            const item = document.createElement('div');
-            item.className = 'history-item';
-            item.textContent = `${name} - ${new Date().toLocaleTimeString()}`;
-            historyDiv.appendChild(item);
+
+        function showError(msg) {
+            stopTimer();
+            resultDiv.textContent = `Error: ${msg}`;
+            resultDiv.classList.add('active', 'error');
+            reset();
         }
     </script>
 </body>
