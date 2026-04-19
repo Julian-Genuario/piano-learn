@@ -183,6 +183,7 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
                 if state["playing"] and state["player"]:
                     elapsed = time.time() - state["start_time"]
                     player = state["player"]
+                    scaled_time = elapsed * player.speed
 
                     if state["mode"] == "karaoke":
                         active = player.get_active_notes(elapsed)
@@ -204,7 +205,7 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
                              "duration": n.duration}
                             for n in upcoming
                         ],
-                        "elapsed": elapsed,
+                        "elapsed": scaled_time,
                         "mode": state["mode"]
                     })
 
