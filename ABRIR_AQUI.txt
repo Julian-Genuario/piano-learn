@@ -1,0 +1,42 @@
+========================================
+ABRE ESTO EN EL NAVEGADOR AHORA
+========================================
+
+El programa está LISTO. Sigue estos pasos:
+
+1. Abre terminal/cmd en C:\Users\Juli\Desktop\piano-learn
+
+2. Ejecuta:
+   python run_server.py --mock
+
+3. Cuando veas "Application startup complete", abre tu navegador
+
+4. Ve a:
+   http://localhost:8001/test-colors.html
+
+5. Haz click en "Cargar Canciones"
+
+6. Selecciona cualquier canción (ej: "River Flows in You")
+
+7. Haz click en "PLAY"
+
+ESPERA 2-3 SEGUNDOS...
+
+========================================
+QUE VAS A VER:
+========================================
+
+En la pantalla deberías ver CASILLAS:
+- Algunas AZULES (mano derecha)
+- Algunas VERDES (mano izquierda)
+
+Si ves AZUL y VERDE mezclados = FUNCIONA PERFECTO
+
+Si ves SOLO VERDE = Hay problema con caché del navegador
+- Presiona Ctrl+Shift+Delete
+- Borra "Ficheros en caché"
+- Actualiza la página (F5)
+
+========================================
+ESO ES TODO. El programa está funcionando.
+========================================
