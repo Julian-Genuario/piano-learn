@@ -5,10 +5,11 @@ import sys
 import shutil
 import uuid
 
-# Extra paths to search for executables (deno, ffmpeg, etc.)
+# Extra paths to search for executables (yt-dlp, ffmpeg, etc.)
 _EXTRA_PATHS = [
     os.path.join(os.path.expanduser("~"), ".deno", "bin"),
     os.path.dirname(sys.executable),
+    os.path.join(os.path.dirname(sys.executable), "Scripts"),
 ]
 
 

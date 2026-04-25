@@ -1,31 +1,33 @@
 # midi_extractor/separator.py
 import subprocess
-import glob
 import os
 import sys
 
 
 def separate_piano(wav_path: str, output_dir: str = "separated") -> str:
-    """Isolate piano from a WAV file using demucs. Returns path to piano stem."""
-    cmd = [
-        sys.executable, "-m", "demucs",
-        "--two-stems", "other",
-        "-o", output_dir,
-        wav_path
-    ]
+    """Isolate non-vocal audio using demucs. Returns path to separated WAV."""
+    # Use venv-extractor python (has demucs/torch)
+    project_root = os.path.dirname(os.path.dirname(__file__))
+    venv_python = os.path.join(project_root, ".venv-extractor", "Scripts", "python.exe")
+    if not os.path.isfile(venv_python):
+        venv_python = os.path.join(project_root, ".venv-extractor", "bin", "python")
+    python = venv_python if os.path.isfile(venv_python) else sys.executable
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    script = os.path.join(os.path.dirname(__file__), "_separate_worker.py")
+    cmd = [python, script, wav_path, output_dir]
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
     if result.returncode != 0:
-        raise RuntimeError(f"demucs failed: {result.stderr}")
+        raise RuntimeError(f"demucs failed: {result.stderr[-500:]}")
 
+    # Find the output file
     stem_name = os.path.splitext(os.path.basename(wav_path))[0]
-    pattern = os.path.join(output_dir, "htdemucs", stem_name, "no_other.wav")
-    matches = glob.glob(pattern)
+    for name in ["no_vocals.wav", "other.wav"]:
+        path = os.path.join(output_dir, stem_name, name)
+        if os.path.isfile(path):
+            return path
 
-    if not matches:
-        pattern = os.path.join(output_dir, "htdemucs", stem_name, "*.wav")
-        matches = glob.glob(pattern)
-        if not matches:
-            raise RuntimeError(f"No piano stem found in {output_dir}")
-
-    return matches[0]
+    raise RuntimeError(f"No separated stem found in {output_dir}/{stem_name}")

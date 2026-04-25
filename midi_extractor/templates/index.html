@@ -59,8 +59,8 @@
             <label for="name">Nombre de la cancion</label>
             <input type="text" id="name" placeholder="Fur Elise (opcional)">
             <div class="checkbox-row">
-                <input type="checkbox" id="separate">
-                <label for="separate" style="margin:0">Separar piano (mas lento, para videos con varios instrumentos)</label>
+                <input type="checkbox" id="separate" checked>
+                <label for="separate" style="margin:0">Separar piano con demucs (recomendado para mejor calidad)</label>
             </div>
             <button type="submit" id="submitBtn">Extraer MIDI</button>
         </form>
@@ -84,13 +84,12 @@
 
         const progressMap = {
             'Starting...': 5,
-            'Downloading audio...': 20,
-            'Separating piano with demucs...': 40,
-            'Transcribing to MIDI...': 60,
-            'Cleaning up...': 90,
-            'Syncing to Pi...': 95,
-            'Complete!': 100,
-            'Done!': 100
+            'Descargando audio...': 20,
+            'Separando piano con demucs...': 40,
+            'Transcribiendo a MIDI (piano_transcription)...': 65,
+            'Limpiando archivos temporales...': 90,
+            'Enviando a Pi...': 95,
+            'Listo!': 100,
         };
 
         function formatTime(seconds) {

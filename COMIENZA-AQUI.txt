@@ -1,0 +1,45 @@
+PIANOLEARN - COMIENZA AQUI
+
+=== INSTALACION (solo primera vez) ===
+1. Descomprime esta carpeta
+2. Necesitas Python 3.10-3.13 instalado
+   Descarga de: https://www.python.org/downloads/
+
+=== EJECUTAR ===
+
+OPCION A - PIANO (recomendado para aprender):
+  - Haz DOBLE CLICK en: START-PIANO.bat
+  - Se abrira una ventana negra
+  - Abre navegador: http://localhost:8001
+  - Selecciona perfil y carga una cancion
+
+OPCION B - EXTRACTOR MIDI (YouTube a MIDI):
+  - Haz DOBLE CLICK en: START-EXTRACTOR.bat
+  - Se abrira una ventana negra
+  - Abre navegador: http://localhost:8001
+  - Pega URL de YouTube y extrae
+
+=== PARA DETENER ===
+- Presiona Ctrl+C en la ventana negra
+- O cierra la ventana
+
+=== PARA LA RASPBERRY PI ===
+Ver instrucciones en: README.md
+
+=== PROBLEMAS ===
+- "Python no se encuentra": Instala Python 3.10-3.13
+- "Puerto en uso": Cierra otras apps que usen puerto 8000
+- "No carga la pagina": Espera 10 segundos y recarga (F5)
+
+=== COLORES ===
+- VERDE = mano derecha
+- AZUL = mano izquierda
+
+Cambiar colores: Ajustes (dentro de la app)
+
+=== AGREGAR CANCIONES ===
+1. Desde YouTube: Boton "YouTube" en la app
+2. Archivo MIDI: Boton "MIDI" en la app
+3. Copiar archivo .mid a carpeta "songs/"
+
+LISTO!

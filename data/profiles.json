@@ -1,0 +1,73 @@
+{
+  "profiles": {
+    "42222a60": {
+      "name": "Juli",
+      "avatar": "🐱",
+      "level": "principiante",
+      "created": "2026-04-20T02:12:29.362394",
+      "practice": {
+        "River Flows in You - Yiruma": {
+          "count": 2,
+          "last": "2026-04-20T02:16:36.628684",
+          "best_speed": 100
+        },
+        "Hans Zimmer - Interstellar Main Theme Piano": {
+          "count": 1,
+          "last": "2026-04-20T20:51:59.077825",
+          "best_speed": 100
+        },
+        "Pokemon - Pokémon Red & Blue Theme": {
+          "count": 2,
+          "last": "2026-04-20T23:06:11.991171",
+          "best_speed": 100
+        },
+        "Digimon - Brave Heart": {
+          "count": 1,
+          "last": "2026-04-20T23:08:40.361673",
+          "best_speed": 100
+        },
+        "Pokemon - ¡Atrapalo": {
+          "count": 16,
+          "last": "2026-04-25T02:31:21.184586",
+          "best_speed": 150
+        },
+        "Canon D - Brave Heart - EZ": {
+          "count": 3,
+          "last": "2026-04-25T00:48:40.152042",
+          "best_speed": 100
+        },
+        "John Legend - All of Me Piano": {
+          "count": 2,
+          "last": "2026-04-25T00:39:46.423166",
+          "best_speed": 100
+        },
+        "Ode to Joy - Beethoven": {
+          "count": 2,
+          "last": "2026-04-25T00:48:10.412569",
+          "best_speed": 100
+        },
+        "Prelude in C Major BWV 846 - Bach": {
+          "count": 4,
+          "last": "2026-04-25T02:18:26.962200",
+          "best_speed": 150
+        },
+        "Pachelbel - Canon in D Piano": {
+          "count": 1,
+          "last": "2026-04-25T00:52:08.901607",
+          "best_speed": 100
+        },
+        "Fur Elise - Beethoven": {
+          "count": 1,
+          "last": "2026-04-25T02:15:22.452601",
+          "best_speed": 150
+        }
+      },
+      "preferences": {
+        "color_right": "#0064ff",
+        "color_left": "#00ff64",
+        "volume": 100,
+        "speed": 150
+      }
+    }
+  }
+}

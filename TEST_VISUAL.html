@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Visual - Colores de Notas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .test-box {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #333;
+            border-radius: 4px;
+        }
+        .pass { border-left-color: #4CAF50; }
+        .fail { border-left-color: #f44336; }
+        .pending { border-left-color: #2196F3; }
+
+        h1 { color: #333; }
+        h2 { color: #666; font-size: 18px; margin-top: 0; }
+
+        .color-sample {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            margin: 5px;
+            vertical-align: middle;
+            border: 2px solid #999;
+        }
+
+        .blue { background: #1E90FF; }
+        .green { background: #00C853; }
+
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
+        .status-ok { color: #4CAF50; font-weight: bold; }
+        .status-fail { color: #f44336; font-weight: bold; }
+
+        #websocket-test {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>PianoLearn - Test Visual de Colores</h1>
+
+    <div class="test-box pending" id="test-1">
+        <h2>1. Conexión al Servidor</h2>
+        <p id="test-1-msg">Conectando a http://localhost:8001...</p>
+    </div>
+
+    <div class="test-box pending" id="test-2">
+        <h2>2. Verificación de Colores Esperados</h2>
+        <p>Mano derecha: <div class="color-sample blue"></div> Azul (#1E90FF)</p>
+        <p>Mano izquierda: <div class="color-sample green"></div> Verde (#00C853)</p>
+    </div>
+
+    <div class="test-box pending" id="test-3">
+        <h2>3. Datos del WebSocket</h2>
+        <div id="websocket-test">
+            <p id="ws-status">Esperando conexión...</p>
+        </div>
+    </div>
+
+    <script>
+        async function runTests() {
+            // Test 1: API
+            try {
+                const res = await fetch('/api/player/state');
+                const data = await res.json();
+
+                document.getElementById('test-1').className = 'test-box pass';
+                document.getElementById('test-1-msg').innerHTML =
+                    '<span class="status-ok">✓ Servidor conectado</span><br>' +
+                    `Canción actual: ${data.current_song}<br>` +
+                    `Estado: ${data.playing ? 'reproduciendo' : 'parado'}`;
+            } catch (e) {
+                document.getElementById('test-1').className = 'test-box fail';
+                document.getElementById('test-1-msg').innerHTML =
+                    `<span class="status-fail">✗ Error: ${e.message}</span>`;
+                return;
+            }
+
+            // Test 3: WebSocket
+            try {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(`${protocol}//${location.host}/ws/player`);
+
+                ws.onopen = () => {
+                    console.log('WebSocket conectado');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+
+                    document.getElementById('test-3').className = 'test-box pass';
+
+                    let html = '<span class="status-ok">✓ WebSocket activo - Datos recibidos:</span><br><br>';
+
+                    if (data.active && data.active.length > 0) {
+                        html += '<strong>Notas Activas:</strong><br>';
+                        data.active.slice(0, 3).forEach(n => {
+                            const handColor = n.hand === 'right' ?
+                                `<div class="color-sample blue" style="display:inline-block"></div>` :
+                                `<div class="color-sample green" style="display:inline-block"></div>`;
+                            html += `Nota ${n.note}: ${n.hand} ${handColor}<br>`;
+                        });
+                        if (data.active.length > 3) {
+                            html += `... y ${data.active.length - 3} más<br>`;
+                        }
+                    }
+
+                    if (data.upcoming && data.upcoming.length > 0) {
+                        html += '<br><strong>Notas Próximas:</strong><br>';
+                        data.upcoming.slice(0, 3).forEach(n => {
+                            const handColor = n.hand === 'right' ?
+                                `<div class="color-sample blue" style="display:inline-block"></div>` :
+                                `<div class="color-sample green" style="display:inline-block"></div>`;
+                            html += `Nota ${n.note}: ${n.hand} ${handColor}<br>`;
+                        });
+                        if (data.upcoming.length > 3) {
+                            html += `... y ${data.upcoming.length - 3} más<br>`;
+                        }
+                    }
+
+                    document.getElementById('websocket-test').innerHTML = html;
+                };
+
+                ws.onerror = (e) => {
+                    document.getElementById('test-3').className = 'test-box fail';
+                    document.getElementById('websocket-test').innerHTML =
+                        `<span class="status-fail">✗ Error WebSocket</span>`;
+                };
+            } catch (e) {
+                document.getElementById('test-3').className = 'test-box fail';
+                document.getElementById('websocket-test').innerHTML =
+                    `<span class="status-fail">✗ Error: ${e.message}</span>`;
+            }
+        }
+
+        // Ejecutar tests cuando la página cargue
+        window.addEventListener('load', runTests);
+
+        // Ejecutar nuevamente cada 2 segundos para verificar cambios
+        setInterval(runTests, 2000);
+    </script>
+</body>
+</html>

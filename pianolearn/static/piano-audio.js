@@ -1,200 +1,314 @@
 class PianoAudio {
     constructor() {
         this.ctx = null;
-        this.activeOscs = new Map();
         this.masterGain = null;
-        this.convolver = null;
+        this.compressor = null;
+        this.samples = {};       // note number -> AudioBuffer
+        this.activeNotes = new Map(); // note -> {source, gain, panner, filter}
         this.started = false;
+        this.loading = false;
+        this.loaded = false;
+        this._loadProgress = 0;
     }
 
     init() {
         if (this.started) return;
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
-        // Master volume
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.5;
+        this.masterGain.gain.value = 0.7;
 
-        // Reverb (convolver with generated impulse)
-        this.convolver = this.ctx.createConvolver();
-        this.convolver.buffer = this._createReverbImpulse(2.0, 2.5);
-        const reverbGain = this.ctx.createGain();
-        reverbGain.gain.value = 0.15;
-
-        // Compressor
         this.compressor = this.ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -18;
-        this.compressor.knee.value = 12;
+        this.compressor.threshold.value = -12;
+        this.compressor.knee.value = 10;
         this.compressor.ratio.value = 4;
+        this.compressor.attack.value = 0.002;
+        this.compressor.release.value = 0.12;
 
-        // Routing: master -> compressor -> destination
-        //          master -> reverb -> reverbGain -> compressor
+        // Reverb send
+        this.convolver = this.ctx.createConvolver();
+        this.convolver.buffer = this._createReverb();
+        this._reverbGain = this.ctx.createGain();
+        this._reverbGain.gain.value = 0.07;
+
+        // Dry -> compressor -> out
         this.masterGain.connect(this.compressor);
+        // Wet -> reverb -> reverbGain -> compressor -> out
         this.masterGain.connect(this.convolver);
-        this.convolver.connect(reverbGain);
-        reverbGain.connect(this.compressor);
+        this.convolver.connect(this._reverbGain);
+        this._reverbGain.connect(this.compressor);
         this.compressor.connect(this.ctx.destination);
 
         this.started = true;
+        if (!this.loaded && !this.loading) this._loadSamples();
     }
 
-    _createReverbImpulse(duration, decay) {
+    _createReverb() {
         const rate = this.ctx.sampleRate;
-        const length = rate * duration;
-        const impulse = this.ctx.createBuffer(2, length, rate);
+        const duration = 2.2;
+        const len = Math.floor(rate * duration);
+        const buf = this.ctx.createBuffer(2, len, rate);
+
         for (let ch = 0; ch < 2; ch++) {
-            const data = impulse.getChannelData(ch);
-            for (let i = 0; i < length; i++) {
-                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+            const d = buf.getChannelData(ch);
+
+            // Early reflections at specific delays (simulates room walls)
+            const reflections = [0.012, 0.019, 0.027, 0.034, 0.048, 0.063, 0.079];
+            for (const delay of reflections) {
+                const idx = Math.floor(delay * rate);
+                if (idx < len) {
+                    const amp = 0.4 * (1 - delay / 0.08);
+                    // Spread reflections across stereo
+                    d[idx] += amp * (ch === 0 ? 0.8 : 0.6) * (Math.random() > 0.5 ? 1 : -1);
+                    // Smear each reflection slightly
+                    for (let j = -2; j <= 2; j++) {
+                        if (idx + j >= 0 && idx + j < len) {
+                            d[idx + j] += amp * 0.2 * (Math.random() * 2 - 1);
+                        }
+                    }
+                }
+            }
+
+            // Diffuse tail starting after early reflections
+            for (let i = Math.floor(0.04 * rate); i < len; i++) {
+                const t = i / rate;
+                // Exponential decay with frequency-dependent absorption
+                const envelope = Math.exp(-t * 2.8) * 0.35;
+                d[i] += (Math.random() * 2 - 1) * envelope;
             }
         }
-        return impulse;
+        return buf;
     }
 
-    _midiToFreq(note) {
-        return 440 * Math.pow(2, (note - 69) / 12);
+    async _loadSamples() {
+        this.loading = true;
+
+        // Load ALL 88 piano keys - no pitch shifting needed
+        const noteLetters = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+        const allNotes = [];
+
+        // A0 (21) to C8 (108)
+        // A0, Bb0, B0
+        allNotes.push('A0', 'Bb0', 'B0');
+        // C1-B7 (all 12 notes per octave)
+        for (let oct = 1; oct <= 7; oct++) {
+            for (const letter of noteLetters) {
+                allNotes.push(letter + oct);
+            }
+        }
+        // C8
+        allNotes.push('C8');
+
+        const baseUrl = 'https://gleitz.github.io/midi-js-soundfonts/FatBoy/acoustic_grand_piano-mp3/';
+
+        const nameToMidi = (name) => {
+            const notes = {'C':0,'Db':1,'D':2,'Eb':3,'E':4,'F':5,'Gb':6,'G':7,'Ab':8,'A':9,'Bb':10,'B':11};
+            const notePart = name.slice(0, -1);
+            const octave = parseInt(name.slice(-1));
+            return notes[notePart] + (octave + 1) * 12;
+        };
+
+        // Load in batches of 12 to avoid overwhelming the browser
+        let loaded = 0;
+        const batchSize = 12;
+        for (let i = 0; i < allNotes.length; i += batchSize) {
+            const batch = allNotes.slice(i, i + batchSize);
+            await Promise.all(batch.map(async (name) => {
+                const midi = nameToMidi(name);
+                try {
+                    const res = await fetch(`${baseUrl}${name}.mp3`);
+                    if (!res.ok) return;
+                    const buf = await res.arrayBuffer();
+                    this.samples[midi] = await this.ctx.decodeAudioData(buf);
+                    loaded++;
+                    this._loadProgress = loaded / allNotes.length;
+                } catch (e) {
+                    // Sample not available
+                }
+            }));
+        }
+
+        this.loaded = true;
+        this.loading = false;
+        this._loadProgress = 1;
+    }
+
+    _findClosestSample(note) {
+        // With all 88 keys loaded, this should return exact match most of the time
+        if (this.samples[note]) return note;
+        let closest = null;
+        let minDist = Infinity;
+        for (const key in this.samples) {
+            const dist = Math.abs(parseInt(key) - note);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = parseInt(key);
+            }
+        }
+        return closest;
+    }
+
+    // Stereo pan: low notes left, high notes right
+    _notePan(note) {
+        return ((note - 21) / (108 - 21) - 0.5) * 0.7;
     }
 
     noteOn(note, velocity = 100) {
         if (!this.started) this.init();
-        if (this.activeOscs.has(note)) this.noteOff(note);
 
-        const freq = this._midiToFreq(note);
-        const vol = (velocity / 127) * 0.28;
         const now = this.ctx.currentTime;
 
-        // Brightness varies by register: high notes are brighter, low notes warmer
-        const register = (note - 21) / 87; // 0=low, 1=high
-
-        // Main gain envelope - piano hammer strike
-        const gainNode = this.ctx.createGain();
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(vol, now + 0.005);          // very fast hammer attack
-        gainNode.gain.exponentialRampToValueAtTime(vol * 0.7, now + 0.08); // initial drop
-        gainNode.gain.exponentialRampToValueAtTime(vol * 0.4, now + 0.4);  // decay
-        gainNode.gain.exponentialRampToValueAtTime(vol * 0.15, now + 1.5); // sustain fade
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 4.0);      // tail
-        gainNode.connect(this.masterGain);
-
-        const oscs = [];
-
-        // 1) Fundamental - triangle for warmth
-        const osc1 = this.ctx.createOscillator();
-        osc1.type = 'triangle';
-        osc1.frequency.value = freq;
-        const g1 = this.ctx.createGain();
-        g1.gain.value = 1.0;
-        osc1.connect(g1);
-        g1.connect(gainNode);
-        oscs.push(osc1);
-
-        // 2) 2nd harmonic - adds body
-        const osc2 = this.ctx.createOscillator();
-        osc2.type = 'sine';
-        osc2.frequency.value = freq * 2;
-        const g2 = this.ctx.createGain();
-        g2.gain.value = 0.4 * (1 - register * 0.3);
-        // 2nd harmonic decays faster
-        g2.gain.setValueAtTime(g2.gain.value, now);
-        g2.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
-        osc2.connect(g2);
-        g2.connect(gainNode);
-        oscs.push(osc2);
-
-        // 3) 3rd harmonic - brightness
-        const osc3 = this.ctx.createOscillator();
-        osc3.type = 'sine';
-        osc3.frequency.value = freq * 3;
-        const g3 = this.ctx.createGain();
-        g3.gain.value = 0.15 * (0.5 + register * 0.5);
-        g3.gain.setValueAtTime(g3.gain.value, now);
-        g3.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
-        osc3.connect(g3);
-        g3.connect(gainNode);
-        oscs.push(osc3);
-
-        // 4) 4th harmonic - shimmer, very subtle
-        const osc4 = this.ctx.createOscillator();
-        osc4.type = 'sine';
-        osc4.frequency.value = freq * 4;
-        const g4 = this.ctx.createGain();
-        g4.gain.value = 0.06 * register;
-        g4.gain.setValueAtTime(g4.gain.value, now);
-        g4.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-        osc4.connect(g4);
-        g4.connect(gainNode);
-        oscs.push(osc4);
-
-        // 5) Hammer noise - percussive click on attack
-        const noiseLen = 0.04;
-        const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * noiseLen, this.ctx.sampleRate);
-        const noiseData = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < noiseData.length; i++) {
-            noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseData.length, 3);
+        // Quick crossfade if same note is already playing
+        if (this.activeNotes.has(note)) {
+            const prev = this.activeNotes.get(note);
+            prev.gain.gain.cancelScheduledValues(now);
+            prev.gain.gain.setValueAtTime(prev.gain.gain.value, now);
+            prev.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+            try { prev.source.stop(now + 0.03); } catch(e) {}
+            this.activeNotes.delete(note);
         }
-        const noiseSrc = this.ctx.createBufferSource();
-        noiseSrc.buffer = noiseBuffer;
 
-        // Bandpass filter the noise around the note frequency
-        const noiseFilt = this.ctx.createBiquadFilter();
-        noiseFilt.type = 'bandpass';
-        noiseFilt.frequency.value = freq * 2;
-        noiseFilt.Q.value = 2;
+        if (!this.loaded) {
+            this._oscNoteOn(note, velocity);
+            return;
+        }
 
-        const noiseGain = this.ctx.createGain();
-        noiseGain.gain.value = 0.3 * (0.3 + register * 0.7);
+        const sampleNote = this._findClosestSample(note);
+        if (sampleNote === null) return;
 
-        noiseSrc.connect(noiseFilt);
-        noiseFilt.connect(noiseGain);
-        noiseGain.connect(gainNode);
-        noiseSrc.start(now);
+        const buffer = this.samples[sampleNote];
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
 
-        // 6) Slight detuning for richness (like real piano strings)
-        const osc1b = this.ctx.createOscillator();
-        osc1b.type = 'triangle';
-        osc1b.frequency.value = freq * 1.001; // ~2 cents sharp
-        const g1b = this.ctx.createGain();
-        g1b.gain.value = 0.3;
-        osc1b.connect(g1b);
-        g1b.connect(gainNode);
-        oscs.push(osc1b);
+        // Pitch shift only if exact sample isn't available (rare with full 88)
+        const semitones = note - sampleNote;
+        if (semitones !== 0) {
+            source.playbackRate.value = Math.pow(2, semitones / 12);
+        }
 
-        // Start all oscillators
-        oscs.forEach(o => o.start(now));
+        // --- Velocity-dependent volume ---
+        const velNorm = velocity / 127;
+        const vol = velNorm * 0.75 + 0.05; // 0.05 - 0.80 range
 
-        // Auto-stop after 5 seconds if not released
-        const stopTime = now + 5;
-        oscs.forEach(o => o.stop(stopTime));
+        const gainNode = this.ctx.createGain();
+        // Soft attack: faster for high velocity (percussive), slower for soft
+        const attackTime = 0.003 + (1 - velNorm) * 0.010;
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(vol, now + attackTime);
 
-        this.activeOscs.set(note, { oscs, gain: gainNode, noiseSrc });
+        // --- Velocity-dependent brightness (low-pass filter) ---
+        // Soft notes sound warmer (more muffled), loud notes brighter
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        // Soft (vel=0): 2kHz cutoff, Loud (vel=127): 16kHz (wide open)
+        filter.frequency.value = 2000 + velNorm * 14000;
+        filter.Q.value = 0.5;
+
+        // Stereo panning
+        const panner = this.ctx.createStereoPanner();
+        panner.pan.value = this._notePan(note);
+
+        // Chain: source -> filter -> gain -> panner -> master
+        source.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(panner);
+        panner.connect(this.masterGain);
+        source.start();
+
+        source.onended = () => {
+            if (this.activeNotes.get(note)?.source === source) {
+                this.activeNotes.delete(note);
+            }
+        };
+
+        this.activeNotes.set(note, { source, gain: gainNode, panner, filter });
     }
 
     noteOff(note) {
-        const entry = this.activeOscs.get(note);
+        const entry = this.activeNotes.get(note);
         if (!entry) return;
 
         const now = this.ctx.currentTime;
+        const currentVal = entry.gain.gain.value;
+        if (currentVal <= 0.001) {
+            try { entry.source.stop(now); } catch(e) {}
+            this.activeNotes.delete(note);
+            return;
+        }
 
-        // Damper release - piano string dampened
+        // Piano damper: bass strings ring longer, treble shorter
+        // Also close the filter during release for warmth
+        const releaseTime = 0.12 + Math.max(0, (72 - note) / 60) * 0.30;
+
         entry.gain.gain.cancelScheduledValues(now);
-        entry.gain.gain.setValueAtTime(entry.gain.gain.value, now);
-        entry.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        entry.gain.gain.setValueAtTime(currentVal, now);
+        // Damper hits string: quick initial drop, then exponential tail
+        entry.gain.gain.linearRampToValueAtTime(currentVal * 0.20, now + releaseTime * 0.12);
+        entry.gain.gain.exponentialRampToValueAtTime(0.001, now + releaseTime);
 
-        entry.oscs.forEach(osc => {
-            try { osc.stop(now + 0.2); } catch(e) {}
-        });
-        this.activeOscs.delete(note);
+        // Darken the sound during release (damper absorbs high frequencies)
+        if (entry.filter) {
+            entry.filter.frequency.cancelScheduledValues(now);
+            entry.filter.frequency.setValueAtTime(entry.filter.frequency.value, now);
+            entry.filter.frequency.exponentialRampToValueAtTime(800, now + releaseTime * 0.5);
+        }
+
+        try { entry.source.stop(now + releaseTime + 0.02); } catch(e) {}
+
+        // Delayed cleanup so re-articulation during release still crossfades
+        const src = entry.source;
+        setTimeout(() => {
+            if (this.activeNotes.get(note)?.source === src) {
+                this.activeNotes.delete(note);
+            }
+        }, releaseTime * 1000 + 30);
+    }
+
+    // Oscillator fallback while samples load
+    _oscNoteOn(note, velocity) {
+        const freq = 440 * Math.pow(2, (note - 69) / 12);
+        const vol = (velocity / 127) * 0.15;
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(vol, now + 0.005);
+        gain.gain.exponentialRampToValueAtTime(vol * 0.3, now + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 2);
+
+        const panner = this.ctx.createStereoPanner();
+        panner.pan.value = this._notePan(note);
+
+        osc.connect(gain);
+        gain.connect(panner);
+        panner.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + 3);
+
+        this.activeNotes.set(note, { source: osc, gain, panner, filter: null });
     }
 
     setVolume(vol) {
         if (this.masterGain) {
-            this.masterGain.gain.value = Math.max(0, Math.min(1, vol));
+            this.masterGain.gain.value = Math.max(0, Math.min(1, vol * 1.4));
         }
     }
 
     stopAll() {
-        for (const note of [...this.activeOscs.keys()]) {
-            this.noteOff(note);
+        const now = this.ctx ? this.ctx.currentTime : 0;
+        for (const note of [...this.activeNotes.keys()]) {
+            const entry = this.activeNotes.get(note);
+            try {
+                entry.gain.gain.cancelScheduledValues(now);
+                entry.gain.gain.setValueAtTime(entry.gain.gain.value, now);
+                entry.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                entry.source.stop(now + 0.05);
+            } catch(e) {}
+            this.activeNotes.delete(note);
         }
     }
 }
