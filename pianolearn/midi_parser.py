@@ -14,15 +14,28 @@ class NoteEvent:
 def parse_midi(midi_path: str) -> list[NoteEvent]:
     """Parse a MIDI file and return a list of NoteEvents with hand assignment.
 
-    Hand detection: track 0 or tracks named with 'right'/'treble' -> right hand.
-    Track 1 or tracks named with 'left'/'bass' -> left hand.
-    If only one track, split at middle C (note 60): >= 60 is right, < 60 is left.
+    Hand detection: tracks named with 'right'/'treble' -> right hand.
+    Tracks named with 'left'/'bass' -> left hand.
+    For unnamed tracks: if 2 tracks, assign first non-empty to right, second to left.
+    For single track, split at middle C (note 60): >= 60 is right, < 60 is left.
     """
     mid = mido.MidiFile(midi_path)
     events = []
 
+    # Find which tracks have notes
+    tracks_with_notes = []
     for track_idx, track in enumerate(mid.tracks):
-        hand = _detect_hand(track_idx, track.name, len(mid.tracks))
+        has_notes = any(hasattr(msg, 'type') and msg.type in ('note_on', 'note_off') for msg in track)
+        if has_notes:
+            tracks_with_notes.append(track_idx)
+
+    for track_idx, track in enumerate(mid.tracks):
+        # Skip tracks with no notes
+        has_notes = track_idx in tracks_with_notes
+        if not has_notes:
+            continue
+
+        hand = _detect_hand(track_idx, track.name, len(mid.tracks), tracks_with_notes)
         active_notes: dict[int, tuple[float, int]] = {}
         current_time = 0.0
         tempo = 500000  # default 120 BPM
@@ -51,13 +64,17 @@ def parse_midi(midi_path: str) -> list[NoteEvent]:
     return events
 
 
-def _detect_hand(track_idx: int, track_name: str, total_tracks: int) -> str | None:
+def _detect_hand(track_idx: int, track_name: str, total_tracks: int, tracks_with_notes: list[int]) -> str | None:
     """Detect which hand a track belongs to. Returns None if ambiguous."""
     name = track_name.lower()
     if any(kw in name for kw in ("right", "treble", "melody", "upper")):
         return "right"
     if any(kw in name for kw in ("left", "bass", "accomp", "lower")):
         return "left"
-    if total_tracks == 2:
-        return "right" if track_idx == 0 else "left"
+
+    # For unnamed tracks with notes, assign based on position in tracks_with_notes
+    if len(tracks_with_notes) == 2 and track_idx in tracks_with_notes:
+        position = tracks_with_notes.index(track_idx)
+        return "right" if position == 0 else "left"
+
     return None
