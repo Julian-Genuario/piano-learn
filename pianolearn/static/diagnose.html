@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>DIAGNOSTICO - Prueba Directa</title>
+    <style>
+        body { background: #000; color: #fff; font-family: monospace; padding: 20px; }
+        h1 { color: #1E90FF; }
+        .box { background: #111; padding: 15px; margin: 10px 0; border: 1px solid #333; }
+        .blue { color: #1E90FF; }
+        .green { color: #00C853; }
+        button { background: #1E90FF; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0a5ccc; }
+        textarea { background: #111; color: #0f0; width: 100%; height: 200px; padding: 10px; margin: 10px 0; }
+        .note { display: inline-block; width: 40px; height: 40px; margin: 2px; border-radius: 4px; text-align: center; line-height: 40px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>DIAGNOSTICO DIRECTO</h1>
+
+    <div class="box">
+        <h2>1. Status Inicial</h2>
+        <div id="status"></div>
+    </div>
+
+    <div class="box">
+        <h2>2. Reproducir Canción</h2>
+        <button onclick="loadAndPlay()">REPRODUCIR POKEMON</button>
+        <div id="play-status"></div>
+    </div>
+
+    <div class="box">
+        <h2>3. Monitoreo de WebSocket</h2>
+        <button onclick="startMonitor()">MONITOREAR</button>
+        <div id="monitor"></div>
+        <button onclick="stopMonitor()">DETENER</button>
+    </div>
+
+    <div class="box">
+        <h2>4. Últimos Datos Recibidos</h2>
+        <textarea id="data-display" readonly></textarea>
+    </div>
+
+    <div class="box">
+        <h2>5. Notas Recibidas (Visualización)</h2>
+        <div id="notes-visual"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let monitorActive = false;
+        let rightCount = 0;
+        let leftCount = 0;
+        let messageCount = 0;
+
+        // Check server status
+        window.addEventListener('load', async () => {
+            try {
+                const res = await fetch('/api/songs');
+                const songs = await res.json();
+                document.getElementById('status').innerHTML = `
+                    <span class="green">✓ Servidor conectado</span><br>
+                    Canciones disponibles: ${songs.length}
+                `;
+            } catch (e) {
+                document.getElementById('status').innerHTML = `
+                    <span class="red">✗ Error al conectar</span><br>
+                    ${e}
+                `;
+            }
+        });
+
+        async function loadAndPlay() {
+            try {
+                document.getElementById('play-status').innerHTML = 'Reproduciendo...';
+
+                const res = await fetch('/api/player/play/Pokemon%20-%20%C2%A1Atrapalo', { method: 'POST' });
+                const result = await res.json();
+
+                document.getElementById('play-status').innerHTML = `
+                    <span class="green">✓ ${result.status}</span><br>
+                    ${result.song}
+                `;
+
+                // Esperar un momento y luego conectar
+                setTimeout(startMonitor, 1000);
+            } catch (e) {
+                document.getElementById('play-status').innerHTML = `<span class="red">✗ Error: ${e}</span>`;
+            }
+        }
+
+        function startMonitor() {
+            if (ws) ws.close();
+            monitorActive = true;
+            rightCount = 0;
+            leftCount = 0;
+            messageCount = 0;
+
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws/player`);
+
+            ws.onopen = () => {
+                document.getElementById('monitor').innerHTML = `<span class="green">✓ WebSocket Conectado</span>`;
+            };
+
+            ws.onmessage = (event) => {
+                if (!monitorActive) return;
+
+                try {
+                    const data = JSON.parse(event.data);
+                    messageCount++;
+
+                    // Procesar datos
+                    const upcomingRight = data.upcoming.filter(n => n.hand === 'right').length;
+                    const upcomingLeft = data.upcoming.filter(n => n.hand === 'left').length;
+                    rightCount += upcomingRight;
+                    leftCount += upcomingLeft;
+
+                    // Mostrar log
+                    if (messageCount % 5 === 0) {
+                        const txt = `Mensaje #${messageCount}\n` +
+                            `AZUL (right): ${upcomingRight} notas\n` +
+                            `VERDE (left): ${upcomingLeft} notas\n` +
+                            `Total acumulado: ${rightCount} AZUL, ${leftCount} VERDE\n\n`;
+
+                        document.getElementById('data-display').value = txt + JSON.stringify(data, null, 2);
+
+                        // Visualización
+                        let html = '';
+                        if (upcomingRight > 0) {
+                            for (let i = 0; i < Math.min(upcomingRight, 5); i++) {
+                                html += `<div class="note" style="background: #1E90FF;">A</div>`;
+                            }
+                            if (upcomingRight > 5) html += `<div style="display: inline;">+${upcomingRight - 5}</div>`;
+                        }
+                        html += ' ';
+                        if (upcomingLeft > 0) {
+                            for (let i = 0; i < Math.min(upcomingLeft, 5); i++) {
+                                html += `<div class="note" style="background: #00C853;">I</div>`;
+                            }
+                            if (upcomingLeft > 5) html += `<div style="display: inline;">+${upcomingLeft - 5}</div>`;
+                        }
+                        document.getElementById('notes-visual').innerHTML = html;
+
+                        // Verificación
+                        if (rightCount > 0 && leftCount > 0) {
+                            document.getElementById('monitor').innerHTML =
+                                `<span class="green">✓ AMBOS COLORES DETECTADOS - FUNCIONA!</span>`;
+                        } else if (rightCount === 0 && leftCount > 0) {
+                            document.getElementById('monitor').innerHTML =
+                                `<span style="color: orange">⚠ Solo notas verdes (izquierda)</span>`;
+                        }
+                    }
+
+                } catch (e) {
+                    console.error('Error:', e);
+                }
+            };
+
+            ws.onerror = (e) => {
+                document.getElementById('monitor').innerHTML = `<span style="color: red">✗ Error WebSocket</span>`;
+            };
+
+            ws.onclose = () => {
+                if (monitorActive) {
+                    document.getElementById('monitor').innerHTML = `<span style="color: orange">Desconectado</span>`;
+                }
+            };
+        }
+
+        function stopMonitor() {
+            monitorActive = false;
+            if (ws) ws.close();
+            document.getElementById('monitor').innerHTML = 'Monitoreo detenido';
+        }
+    </script>
+</body>
+</html>
