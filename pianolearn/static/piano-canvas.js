@@ -125,7 +125,8 @@ class PianoCanvas {
     }
 
     _drawFallingNotes(ctx) {
-        const pps = this.keyboardY / this.window; // pixels per second
+        const pps = this.keyboardY / this.window;
+        const gap = 2; // Gap between notes
 
         for (const note of this.upcomingNotes) {
             const { x, w } = this._getNoteRect(note.note);
@@ -136,96 +137,69 @@ class PianoCanvas {
 
             const dt = note.start - this.elapsed;
             const noteBottom = this.keyboardY - dt * pps;
-            const noteH = Math.max(note.duration * pps, 8);
+            let noteH = note.duration * pps;
             const noteTop = noteBottom - noteH;
 
-            // Off-screen check
             if (noteBottom < 0 || noteTop > this.keyboardY) continue;
 
-            // Clamp to visible area
             const drawTop = Math.max(0, noteTop);
             const drawBottom = Math.min(this.keyboardY, noteBottom);
-            const drawH = drawBottom - drawTop;
+            let drawH = drawBottom - drawTop;
             if (drawH <= 0) continue;
 
-            const margin = this._isBlackKey(note.note) ? 2 : 3;
+            // Ensure minimum visible height
+            if (drawH < 4) drawH = 4;
+
+            const margin = 4;
             const nx = x + margin;
             const nw = w - margin * 2;
-            const radius = 4;
 
-            // Shadow/Depth effect (draw before main body)
-            ctx.fillStyle = 'rgba(0,0,0,0.4)';
-            ctx.fillRect(nx + 3, drawTop + 3, nw, drawH);
+            // Add gap at bottom of note (separation)
+            const effectiveH = drawH - gap;
+            if (effectiveH <= 0) continue;
 
-            // Main note body - solid block like Synthesia
+            // Dark shadow background
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(nx - 1, drawTop - 1, nw + 2, effectiveH + 2);
+
+            // Main note body
             ctx.fillStyle = color;
-            ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(nx, drawTop, nw, drawH, radius);
-            } else {
-                ctx.rect(nx, drawTop, nw, drawH);
-            }
-            ctx.fill();
+            ctx.fillRect(nx, drawTop, nw, effectiveH);
 
-            // Strong border - makes note edges clear
-            ctx.strokeStyle = colorDark;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(nx, drawTop, nw, drawH, radius);
-            } else {
-                ctx.rect(nx, drawTop, nw, drawH);
-            }
-            ctx.stroke();
+            // Thick outer border - BLACK
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(nx, drawTop, nw, effectiveH);
 
-            // Left edge highlight (3D depth)
+            // Inner border - COLOR (glow)
+            ctx.strokeStyle = colorGlow;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(nx + 1, drawTop + 1, nw - 2, effectiveH - 2);
+
+            // Left highlight stripe
             ctx.fillStyle = colorGlow;
-            ctx.globalAlpha = 0.5;
-            ctx.fillRect(nx, drawTop, 3, drawH);
-            ctx.globalAlpha = 1;
-
-            // Right edge shadow
-            ctx.fillStyle = colorDark;
             ctx.globalAlpha = 0.6;
-            ctx.fillRect(nx + nw - 3, drawTop, 3, drawH);
+            ctx.fillRect(nx + 1, drawTop + 1, 4, effectiveH - 2);
             ctx.globalAlpha = 1;
 
-            // Top cap (rounded bright end) - more visible
-            if (noteTop >= 0) {
-                const capH = Math.min(6, drawH / 3);
-                const capGrad = ctx.createLinearGradient(0, drawTop, 0, drawTop + capH);
-                capGrad.addColorStop(0, colorGlow);
-                capGrad.addColorStop(1, color);
-                ctx.fillStyle = capGrad;
-                ctx.beginPath();
-                if (ctx.roundRect) {
-                    ctx.roundRect(nx, drawTop, nw, capH, [radius, radius, 0, 0]);
-                } else {
-                    ctx.rect(nx, drawTop, nw, capH);
-                }
-                ctx.fill();
-            }
+            // Top bright cap
+            ctx.fillStyle = colorGlow;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(nx, drawTop, nw, 4);
+            ctx.globalAlpha = 1;
 
-            // Bottom cap - marks where note ends
-            if (drawBottom <= this.keyboardY) {
-                const capH = Math.min(6, drawH / 3);
-                ctx.fillStyle = colorDark;
-                ctx.globalAlpha = 0.5;
-                ctx.fillRect(nx, drawBottom - capH, nw, capH);
-                ctx.globalAlpha = 1;
-            }
+            // Bottom dark marker
+            ctx.fillStyle = colorDark;
+            ctx.globalAlpha = 0.8;
+            ctx.fillRect(nx, drawTop + effectiveH - 4, nw, 4);
+            ctx.globalAlpha = 1;
 
-            // Glow effect when note is touching the keyboard
-            if (noteBottom >= this.keyboardY - 5) {
-                ctx.save();
-                ctx.shadowColor = color;
-                ctx.shadowBlur = 30;
-                ctx.fillStyle = color;
-                ctx.globalAlpha = 0.7;
-                ctx.fillRect(nx, this.keyboardY - 5, nw, 5);
-                ctx.restore();
-                ctx.globalAlpha = 1;
-            }
+            // White outline on note ending
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.4;
+            ctx.strokeRect(nx + 1, drawTop + effectiveH - 5, nw - 2, 4);
+            ctx.globalAlpha = 1;
         }
     }
 

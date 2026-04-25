@@ -16,20 +16,20 @@ class PianoAudio {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.7;
+        this.masterGain.gain.value = 0.5;
 
         this.compressor = this.ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -12;
-        this.compressor.knee.value = 10;
-        this.compressor.ratio.value = 4;
-        this.compressor.attack.value = 0.002;
-        this.compressor.release.value = 0.12;
+        this.compressor.threshold.value = -20;
+        this.compressor.knee.value = 6;
+        this.compressor.ratio.value = 2;
+        this.compressor.attack.value = 0.005;
+        this.compressor.release.value = 0.2;
 
         // Reverb send
         this.convolver = this.ctx.createConvolver();
         this.convolver.buffer = this._createReverb();
         this._reverbGain = this.ctx.createGain();
-        this._reverbGain.gain.value = 0.07;
+        this._reverbGain.gain.value = 0.04;
 
         // Dry -> compressor -> out
         this.masterGain.connect(this.compressor);
@@ -188,11 +188,11 @@ class PianoAudio {
 
         // --- Velocity-dependent volume ---
         const velNorm = velocity / 127;
-        const vol = velNorm * 0.75 + 0.05; // 0.05 - 0.80 range
+        const vol = velNorm * 0.5 + 0.08; // 0.08 - 0.58 range (reduced)
 
         const gainNode = this.ctx.createGain();
         // Soft attack: faster for high velocity (percussive), slower for soft
-        const attackTime = 0.003 + (1 - velNorm) * 0.010;
+        const attackTime = 0.004 + (1 - velNorm) * 0.012;
         gainNode.gain.setValueAtTime(0, now);
         gainNode.gain.linearRampToValueAtTime(vol, now + attackTime);
 
@@ -238,12 +238,12 @@ class PianoAudio {
 
         // Piano damper: bass strings ring longer, treble shorter
         // Also close the filter during release for warmth
-        const releaseTime = 0.12 + Math.max(0, (72 - note) / 60) * 0.30;
+        const releaseTime = 0.08 + Math.max(0, (72 - note) / 60) * 0.15;
 
         entry.gain.gain.cancelScheduledValues(now);
         entry.gain.gain.setValueAtTime(currentVal, now);
         // Damper hits string: quick initial drop, then exponential tail
-        entry.gain.gain.linearRampToValueAtTime(currentVal * 0.20, now + releaseTime * 0.12);
+        entry.gain.gain.linearRampToValueAtTime(currentVal * 0.15, now + releaseTime * 0.15);
         entry.gain.gain.exponentialRampToValueAtTime(0.001, now + releaseTime);
 
         // Darken the sound during release (damper absorbs high frequencies)
