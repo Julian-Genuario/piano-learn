@@ -2,8 +2,11 @@ import asyncio
 import time
 import os
 import sys
+import uuid
+import threading
+import traceback
 
-from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -12,6 +15,11 @@ from pianolearn.song_library import SongLibrary
 from pianolearn.led_controller import LEDController
 from pianolearn.midi_parser import parse_midi
 from pianolearn.midi_player import MidiPlayer
+
+try:
+    from midi_extractor.pipeline import extract_midi
+except ImportError:
+    extract_midi = None
 
 
 class BrightnessRequest(BaseModel):
@@ -31,6 +39,16 @@ class ModeRequest(BaseModel):
     mode: str
 
 
+class YouTubeUrlRequest(BaseModel):
+    url: str
+
+
+class ExtractYouTubeRequest(BaseModel):
+    url: str
+    name: str | None = None
+    separate: bool = False
+
+
 def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
     app = FastAPI(title="PianoLearn")
 
@@ -47,11 +65,103 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
         "colors": {"right": [0, 100, 255], "left": [0, 255, 100]},
     }
 
+    # YouTube extraction job tracking
+    extract_jobs: dict[str, dict] = {}
+    current_extract_job: str | None = None
+
+    def extract_midi_background(job_id: str, req: ExtractYouTubeRequest):
+        """Run extraction in background thread."""
+        nonlocal current_extract_job
+        try:
+            def on_progress(msg: str):
+                extract_jobs[job_id]["progress"] = msg
+                extract_jobs[job_id]["updated"] = time.time()
+
+            extract_jobs[job_id] = {"status": "running", "progress": "Iniciando...", "updated": time.time()}
+
+            midi_path = extract_midi(
+                url=req.url,
+                name=req.name,
+                separate=req.separate,
+                output_dir=songs_dir,
+                on_progress=on_progress
+            )
+
+            extract_jobs[job_id] = {
+                "status": "done",
+                "progress": "Listo!",
+                "midi_path": midi_path,
+                "updated": time.time()
+            }
+        except Exception as e:
+            extract_jobs[job_id] = {
+                "status": "error",
+                "progress": f"{type(e).__name__}: {str(e)}",
+                "updated": time.time()
+            }
+            traceback.print_exc()
+        finally:
+            current_extract_job = None
+
     # --- Song endpoints ---
 
     @app.get("/api/songs")
     async def list_songs():
         return library.list_songs()
+
+    @app.post("/api/songs/upload")
+    async def upload_song(file: UploadFile = File(...)):
+        data = await file.read()
+        library.save_song(file.filename, data)
+        return {"status": "ok", "filename": file.filename}
+
+    @app.post("/api/songs-title")
+    async def get_youtube_title(req: YouTubeUrlRequest):
+        """Get just the title from a YouTube URL without extracting MIDI."""
+        try:
+            from midi_extractor.downloader import download_audio
+            # We need to download to get the title, but delete the audio after
+            wav_path, title = download_audio(req.url, output_dir=songs_dir)
+            import os
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+            return {"title": title}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.post("/api/songs/extract-youtube")
+    async def extract_youtube(req: ExtractYouTubeRequest):
+        nonlocal current_extract_job
+
+        if not extract_midi:
+            return {"error": "MIDI extractor not installed. Install with: pip install yt-dlp demucs basic-pitch"}
+
+        # Check if extraction is already running
+        if current_extract_job and current_extract_job in extract_jobs:
+            job = extract_jobs[current_extract_job]
+            if job.get("status") == "running":
+                elapsed = time.time() - job.get("updated", 0)
+                if elapsed > 1800:  # 30 minute timeout
+                    extract_jobs[current_extract_job] = {
+                        "status": "error",
+                        "progress": "Timeout: la extraccion tardo mas de 30 minutos",
+                        "updated": time.time()
+                    }
+                    current_extract_job = None
+                else:
+                    return {"error": "Ya hay una extraccion en curso. Espera a que termine."}
+
+        job_id = uuid.uuid4().hex[:8]
+        current_extract_job = job_id
+        thread = threading.Thread(target=extract_midi_background, args=(job_id, req), daemon=True)
+        thread.start()
+        return {"job_id": job_id}
+
+    @app.get("/api/songs/extract-status/{job_id}")
+    async def extract_status(job_id: str):
+        if job_id not in extract_jobs:
+            return {"status": "not_found"}
+        return extract_jobs[job_id]
 
     @app.get("/api/songs/{name}")
     async def get_song(name: str):
@@ -59,12 +169,6 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
         if not song:
             return {"error": "not found"}
         return song
-
-    @app.post("/api/songs/upload")
-    async def upload_song(file: UploadFile = File(...)):
-        data = await file.read()
-        library.save_song(file.filename, data)
-        return {"status": "ok", "filename": file.filename}
 
     @app.delete("/api/songs/{name}")
     async def delete_song(name: str):
@@ -79,7 +183,13 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
         if not path:
             return {"error": "song not found"}
 
-        events = parse_midi(path)
+        try:
+            events = parse_midi(path)
+        except OSError as e:
+            return {"error": f"Invalid MIDI file: {str(e)}"}
+        except Exception as e:
+            return {"error": f"Failed to load song: {str(e)}"}
+
         state["player"] = MidiPlayer(events=events, mode=state["mode"], speed=state["speed"])
         state["playing"] = True
         state["current_song"] = song_name

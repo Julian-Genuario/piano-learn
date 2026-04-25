@@ -16,12 +16,12 @@ class PianoAudio {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.5;
+        this.masterGain.gain.value = 0.5;  // Lower to prevent clipping with multiple notes
 
         this.compressor = this.ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -20;
+        this.compressor.threshold.value = -10;  // Higher threshold (less compression)
         this.compressor.knee.value = 6;
-        this.compressor.ratio.value = 2;
+        this.compressor.ratio.value = 1.2;  // Gentler compression
         this.compressor.attack.value = 0.005;
         this.compressor.release.value = 0.2;
 
@@ -163,8 +163,8 @@ class PianoAudio {
             const prev = this.activeNotes.get(note);
             prev.gain.gain.cancelScheduledValues(now);
             prev.gain.gain.setValueAtTime(prev.gain.gain.value, now);
-            prev.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
-            try { prev.source.stop(now + 0.03); } catch(e) {}
+            prev.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.050);
+            try { prev.source.stop(now + 0.06); } catch(e) {}
             this.activeNotes.delete(note);
         }
 
@@ -179,6 +179,7 @@ class PianoAudio {
         const buffer = this.samples[sampleNote];
         const source = this.ctx.createBufferSource();
         source.buffer = buffer;
+        source.loop = true; // Loop the sample to sustain the note
 
         // Pitch shift only if exact sample isn't available (rare with full 88)
         const semitones = note - sampleNote;
@@ -188,7 +189,7 @@ class PianoAudio {
 
         // --- Velocity-dependent volume ---
         const velNorm = velocity / 127;
-        const vol = velNorm * 0.5 + 0.08; // 0.08 - 0.58 range (reduced)
+        const vol = velNorm * 0.65 + 0.10; // 0.10 - 0.75 range
 
         const gainNode = this.ctx.createGain();
         // Soft attack: faster for high velocity (percussive), slower for soft
@@ -215,12 +216,6 @@ class PianoAudio {
         panner.connect(this.masterGain);
         source.start();
 
-        source.onended = () => {
-            if (this.activeNotes.get(note)?.source === source) {
-                this.activeNotes.delete(note);
-            }
-        };
-
         this.activeNotes.set(note, { source, gain: gainNode, panner, filter });
     }
 
@@ -236,38 +231,37 @@ class PianoAudio {
             return;
         }
 
-        // Piano damper: bass strings ring longer, treble shorter
-        // Also close the filter during release for warmth
-        const releaseTime = 0.08 + Math.max(0, (72 - note) / 60) * 0.15;
+        // Longer sustain for better polyphony - notes shouldn't disappear abruptly
+        const releaseTime = 0.4 + Math.max(0, (72 - note) / 60) * 0.3;
 
         entry.gain.gain.cancelScheduledValues(now);
         entry.gain.gain.setValueAtTime(currentVal, now);
-        // Damper hits string: quick initial drop, then exponential tail
-        entry.gain.gain.linearRampToValueAtTime(currentVal * 0.15, now + releaseTime * 0.15);
+        // Gradual fade with exponential curve
         entry.gain.gain.exponentialRampToValueAtTime(0.001, now + releaseTime);
 
-        // Darken the sound during release (damper absorbs high frequencies)
+        // Subtle filter darkening
         if (entry.filter) {
             entry.filter.frequency.cancelScheduledValues(now);
             entry.filter.frequency.setValueAtTime(entry.filter.frequency.value, now);
-            entry.filter.frequency.exponentialRampToValueAtTime(800, now + releaseTime * 0.5);
+            entry.filter.frequency.exponentialRampToValueAtTime(1000, now + releaseTime * 0.7);
         }
 
-        try { entry.source.stop(now + releaseTime + 0.02); } catch(e) {}
+        try { entry.source.stop(now + releaseTime + 0.05); } catch(e) {}
 
-        // Delayed cleanup so re-articulation during release still crossfades
+        // Delayed cleanup
         const src = entry.source;
         setTimeout(() => {
             if (this.activeNotes.get(note)?.source === src) {
                 this.activeNotes.delete(note);
             }
-        }, releaseTime * 1000 + 30);
+        }, releaseTime * 1000 + 50);
     }
 
-    // Oscillator fallback while samples load
+    // Oscillator fallback while samples load - responds to noteOff like samples do
     _oscNoteOn(note, velocity) {
         const freq = 440 * Math.pow(2, (note - 69) / 12);
-        const vol = (velocity / 127) * 0.15;
+        const velNorm = velocity / 127;
+        const vol = velNorm * 0.15;
         const now = this.ctx.currentTime;
 
         const osc = this.ctx.createOscillator();
@@ -275,10 +269,9 @@ class PianoAudio {
         osc.frequency.value = freq;
 
         const gain = this.ctx.createGain();
+        const attackTime = 0.004 + (1 - velNorm) * 0.012;
         gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(vol, now + 0.005);
-        gain.gain.exponentialRampToValueAtTime(vol * 0.3, now + 0.3);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 2);
+        gain.gain.linearRampToValueAtTime(vol, now + attackTime);
 
         const panner = this.ctx.createStereoPanner();
         panner.pan.value = this._notePan(note);
@@ -287,7 +280,12 @@ class PianoAudio {
         gain.connect(panner);
         panner.connect(this.masterGain);
         osc.start(now);
-        osc.stop(now + 3);
+
+        osc.onended = () => {
+            if (this.activeNotes.get(note)?.source === osc) {
+                this.activeNotes.delete(note);
+            }
+        };
 
         this.activeNotes.set(note, { source: osc, gain, panner, filter: null });
     }

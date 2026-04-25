@@ -4,6 +4,15 @@ let pianoAudio = null;
 let ws = null;
 let currentMode = 'standalone';
 let prevActiveNotes = new Set();
+let currentSongName = null;
+
+// Note names mapping
+const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function getMidiNoteName(midiNote) {
+    const octave = Math.floor(midiNote / 12) - 1;
+    const note = midiNote % 12;
+    return noteNames[note] + octave;
+}
 
 // --- Screen Management ---
 
@@ -31,14 +40,58 @@ async function loadSongs() {
     for (const song of songs) {
         const item = document.createElement('div');
         item.className = 'song-item';
+
+        const isFavorite = localStorage.getItem(`fav-${song.name}`) === 'true';
+        const favIcon = isFavorite ? '★' : '☆';
+
         item.innerHTML = `
             <span class="song-icon">&#9835;</span>
-            <div>
+            <div class="song-info">
                 <div class="song-name">${song.name}</div>
                 <div class="song-meta">${(song.size / 1024).toFixed(1)} KB</div>
             </div>
+            <div class="song-menu">
+                <button class="menu-btn" title="Opciones">⋮</button>
+                <div class="menu-dropdown">
+                    <button class="menu-item fav-btn" data-song="${song.name}">${favIcon} Favorito</button>
+                    <button class="menu-item delete-btn" data-song="${song.name}">🗑️ Eliminar</button>
+                </div>
+            </div>
         `;
-        item.addEventListener('click', () => playSong(song.name));
+
+        // Click en nombre → reproducir
+        item.querySelector('.song-name').addEventListener('click', () => playSong(song.name));
+
+        // Menu toggle
+        const menuBtn = item.querySelector('.menu-btn');
+        const menuDropdown = item.querySelector('.menu-dropdown');
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            menuDropdown.classList.toggle('active');
+        });
+
+        // Cerrar menu al hacer click en otro lado
+        document.addEventListener('click', () => {
+            menuDropdown.classList.remove('active');
+        });
+
+        // Favorito
+        item.querySelector('.fav-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const isFav = localStorage.getItem(`fav-${song.name}`) === 'true';
+            localStorage.setItem(`fav-${song.name}`, !isFav);
+            loadSongs();
+        });
+
+        // Eliminar
+        item.querySelector('.delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm(`¿Eliminar "${song.name}"?`)) {
+                await fetch(`${API}/api/songs/${encodeURIComponent(song.name)}`, { method: 'DELETE' });
+                loadSongs();
+            }
+        });
+
         list.appendChild(item);
     }
 }
@@ -50,47 +103,82 @@ async function playSong(name) {
     if (!pianoAudio) pianoAudio = new PianoAudio();
     pianoAudio.init();
 
+    currentSongName = name;
     document.getElementById('songTitle').textContent = name;
     showScreen('screen-player');
     prevActiveNotes = new Set();
-    await fetch(`${API}/api/player/play/${encodeURIComponent(name)}`, { method: 'POST' });
-    connectWebSocket();
+
+    // Show play button and mark as paused
+    document.getElementById('btnPlayCenter').style.display = 'flex';
+    document.getElementById('btnPlayCenter').textContent = '▶';
+    document.getElementById('btnPlayCenter').classList.remove('playing');
+
+    // Render initial piano without notes
+    if (pianoCanvas) {
+        pianoCanvas.update({ active: [], upcoming: [], elapsed: 0 });
+    }
 }
 
 function connectWebSocket() {
     if (ws) ws.close();
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${location.host}/ws/player`);
+    const wsUrl = `${protocol}//${location.host}/ws/player`;
+    console.log('Connecting WebSocket to:', wsUrl);
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+    };
 
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (pianoCanvas) {
-            pianoCanvas.update(data);
-        }
+        try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message:', data.elapsed, 'active:', data.active.length, 'upcoming:', data.upcoming.length);
+            if (pianoCanvas) {
+                pianoCanvas.update(data);
+            }
 
-        // Audio: detect new and released notes
-        if (pianoAudio && pianoAudio.started) {
-            const currentNotes = new Set();
-            for (const n of (data.active || [])) {
-                currentNotes.add(n.note);
-                if (!prevActiveNotes.has(n.note)) {
-                    pianoAudio.noteOn(n.note, n.velocity || 100);
-                }
+            // Show current note
+            const noteDisplay = document.getElementById('noteDisplay');
+            if (data.active && data.active.length > 0) {
+                const highestNote = Math.max(...data.active.map(n => n.note));
+                noteDisplay.textContent = getMidiNoteName(highestNote);
+            } else {
+                noteDisplay.textContent = '';
             }
-            for (const note of prevActiveNotes) {
-                if (!currentNotes.has(note)) {
-                    pianoAudio.noteOff(note);
+
+            // Audio: detect new and released notes
+            if (pianoAudio && pianoAudio.started) {
+                const currentNotes = new Set();
+                for (const n of (data.active || [])) {
+                    currentNotes.add(n.note);
+                    if (!prevActiveNotes.has(n.note)) {
+                        pianoAudio.noteOn(n.note, n.velocity || 100);
+                    }
                 }
+                for (const note of prevActiveNotes) {
+                    if (!currentNotes.has(note)) {
+                        pianoAudio.noteOff(note);
+                    }
+                }
+                prevActiveNotes = currentNotes;
             }
-            prevActiveNotes = currentNotes;
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
         }
     };
 
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+
     ws.onclose = () => {
+        console.log('WebSocket closed');
         if (pianoAudio) pianoAudio.stopAll();
         prevActiveNotes = new Set();
         if (document.getElementById('screen-player').classList.contains('active')) {
+            console.log('Reconnecting WebSocket in 1s...');
             setTimeout(connectWebSocket, 1000);
         }
     };
@@ -155,6 +243,46 @@ document.getElementById('speedSlider').addEventListener('input', async (e) => {
     });
 });
 
+// --- Play button center ---
+document.getElementById('btnPlayCenter').addEventListener('click', async () => {
+    const btn = document.getElementById('btnPlayCenter');
+    if (btn.classList.contains('playing')) {
+        // Pause/Stop playback
+        btn.classList.remove('playing');
+        if (pianoAudio) pianoAudio.stopAll();
+        prevActiveNotes = new Set();
+        await fetch(`${API}/api/player/stop`, { method: 'POST' });
+        if (ws) ws.close();
+        // Show button again
+        btn.style.display = 'flex';
+    } else {
+        // Start playback
+        if (currentSongName) {
+            btn.classList.add('playing');
+            // Hide button when playing
+            btn.style.display = 'none';
+            console.log('Starting playback for:', currentSongName);
+            try {
+                const response = await fetch(`${API}/api/player/play/${encodeURIComponent(currentSongName)}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                const result = await response.json();
+                console.log('Play response:', result);
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                connectWebSocket();
+            } catch (error) {
+                console.error('Play error:', error);
+                alert(`Error al reproducir: ${error.message}`);
+                btn.classList.remove('playing');
+                btn.style.display = 'flex';
+            }
+        }
+    }
+});
+
 // --- Mode Selector ---
 
 document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -172,6 +300,128 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
         }
     });
 });
+
+// --- YouTube Extraction ---
+
+let currentExtractJobId = null;
+let extractCheckInterval = null;
+
+document.getElementById('btnExtractYoutube').addEventListener('click', () => {
+    document.getElementById('extractModal').classList.add('active');
+    document.getElementById('youtubeUrl').focus();
+});
+
+document.getElementById('btnCloseExtract').addEventListener('click', () => {
+    document.getElementById('extractModal').classList.remove('active');
+    if (extractCheckInterval) clearInterval(extractCheckInterval);
+});
+
+document.getElementById('btnGetTitle').addEventListener('click', async () => {
+    const url = document.getElementById('youtubeUrl').value.trim();
+    if (!url) {
+        alert('Por favor ingresa una URL de YouTube');
+        return;
+    }
+
+    document.getElementById('btnGetTitle').disabled = true;
+    document.getElementById('btnGetTitle').textContent = 'Obteniendo...';
+
+    try {
+        const res = await fetch(`${API}/api/songs-title`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+
+        const data = await res.json();
+        if (data.error) {
+            alert(`Error: ${data.error}`);
+        } else {
+            document.getElementById('extractName').value = data.title;
+        }
+    } catch (error) {
+        alert(`Error obteniendo título: ${error.message}`);
+    } finally {
+        document.getElementById('btnGetTitle').disabled = false;
+        document.getElementById('btnGetTitle').textContent = 'Obtener título';
+    }
+});
+
+document.getElementById('btnExtract').addEventListener('click', async () => {
+    const url = document.getElementById('youtubeUrl').value.trim();
+    const name = document.getElementById('extractName').value.trim();
+    const separate = document.getElementById('extractSeparate').checked;
+
+    if (!url) {
+        alert('Por favor ingresa una URL de YouTube');
+        return;
+    }
+
+    if (!name) {
+        alert('Por favor ingresa el nombre de la canción o usa "Obtener título"');
+        return;
+    }
+
+    // Hide input, show progress
+    document.querySelector('.extract-section').style.display = 'none';
+    document.getElementById('extractProgress').style.display = 'block';
+    document.getElementById('extractResult').style.display = 'none';
+    document.getElementById('btnExtract').disabled = true;
+
+    try {
+        const res = await fetch(`${API}/api/songs/extract-youtube`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, name, separate })
+        });
+
+        const data = await res.json();
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        currentExtractJobId = data.job_id;
+        pollExtractStatus();
+    } catch (error) {
+        showExtractResult('error', `Error: ${error.message}`);
+        document.getElementById('btnExtract').disabled = false;
+    }
+});
+
+function pollExtractStatus() {
+    if (!currentExtractJobId) return;
+
+    extractCheckInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`${API}/api/songs/extract-status/${currentExtractJobId}`);
+            const job = await res.json();
+
+            document.getElementById('extractStatus').textContent = job.progress;
+
+            if (job.status === 'done') {
+                clearInterval(extractCheckInterval);
+                showExtractResult('ok', `Extraccion completada: ${job.midi_path}`);
+                document.getElementById('youtubeUrl').value = '';
+                document.getElementById('extractName').value = '';
+                await loadSongs();
+                document.getElementById('btnExtract').disabled = false;
+            } else if (job.status === 'error') {
+                clearInterval(extractCheckInterval);
+                showExtractResult('error', job.progress);
+                document.getElementById('btnExtract').disabled = false;
+            }
+        } catch (error) {
+            console.error('Error checking extraction status:', error);
+        }
+    }, 500);
+}
+
+function showExtractResult(type, message) {
+    const resultEl = document.getElementById('extractResult');
+    resultEl.className = `extract-result ${type}`;
+    resultEl.textContent = message;
+    resultEl.style.display = 'block';
+}
 
 // --- Settings ---
 
@@ -219,17 +469,43 @@ async function updateColors() {
 document.getElementById('colorRight').addEventListener('input', updateColors);
 document.getElementById('colorLeft').addEventListener('input', updateColors);
 
+// --- Keyboard Size Selector ---
+
+document.getElementById('keyboardSize').addEventListener('change', (e) => {
+    if (pianoCanvas) {
+        pianoCanvas.setKeyboardSize(parseInt(e.target.value));
+    }
+});
+
 // --- Search ---
 
-document.getElementById('search').addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase();
+function extractArtist(songName) {
+    // Extrae el artista del nombre de la canción (parte antes del "-")
+    const parts = songName.split(' - ');
+    return parts.length > 1 ? parts[0].toLowerCase() : '';
+}
+
+function filterSongs() {
+    const queryName = document.getElementById('search').value.toLowerCase();
+    const queryArtist = document.getElementById('searchArtist').value.toLowerCase();
+
     document.querySelectorAll('.song-item').forEach(item => {
-        const name = item.querySelector('.song-name');
-        if (name) {
-            item.style.display = name.textContent.toLowerCase().includes(query) ? '' : 'none';
-        }
+        const nameEl = item.querySelector('.song-name');
+        if (!nameEl) return;
+
+        const fullName = nameEl.textContent.toLowerCase();
+        const artist = extractArtist(nameEl.textContent);
+
+        // Mostrar solo si coincide con ambos filtros
+        const matchesName = !queryName || fullName.includes(queryName);
+        const matchesArtist = !queryArtist || artist.includes(queryArtist);
+
+        item.style.display = (matchesName && matchesArtist) ? '' : 'none';
     });
-});
+}
+
+document.getElementById('search').addEventListener('input', filterSongs);
+document.getElementById('searchArtist').addEventListener('input', filterSongs);
 
 // --- Init ---
 

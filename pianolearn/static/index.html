@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>PianoLearn</title>
-    <link rel="stylesheet" href="/static/styles.css?v=2">
+    <link rel="stylesheet" href="/static/styles.css?v=1021">
 </head>
 <body>
     <!-- Library Screen -->
@@ -12,8 +12,11 @@
         <header>
             <div class="header-top">
                 <h1>PianoLearn</h1>
-                <label for="uploadMidi" class="upload-btn-header">+ Subir MIDI</label>
-                <input type="file" id="uploadMidi" accept=".mid,.midi" hidden>
+                <div class="header-buttons">
+                    <button id="btnExtractYoutube" class="youtube-btn">YouTube</button>
+                    <label for="uploadMidi" class="upload-btn-header">+ Subir MIDI</label>
+                    <input type="file" id="uploadMidi" accept=".mid,.midi" hidden>
+                </div>
             </div>
             <nav class="mode-selector">
                 <button class="mode-btn active" data-mode="standalone">Standalone</button>
@@ -24,6 +27,7 @@
 
         <div class="search-bar">
             <input type="text" id="search" placeholder="Buscar cancion...">
+            <input type="text" id="searchArtist" placeholder="Buscar artista...">
         </div>
 
         <div class="song-list" id="songList"></div>
@@ -41,7 +45,11 @@
             </div>
         </header>
 
-        <canvas id="pianoCanvas"></canvas>
+        <div style="flex: 1; position: relative;">
+            <canvas id="pianoCanvas"></canvas>
+            <button id="btnPlayCenter" class="play-btn-center">▶</button>
+            <div id="noteDisplay" class="note-display"></div>
+        </div>
 
         <div class="player-footer">
             <div class="mode-toggle">
@@ -68,6 +76,13 @@
         <div class="modal-content">
             <h2>Ajustes</h2>
             <div class="setting-row">
+                <label>Teclado</label>
+                <select id="keyboardSize">
+                    <option value="88">88 teclas (A0-C8)</option>
+                    <option value="61">61 teclas (C2-C7)</option>
+                </select>
+            </div>
+            <div class="setting-row">
                 <label>Brillo LEDs</label>
                 <input type="range" id="brightnessSlider" min="0" max="255" value="50">
             </div>
@@ -83,8 +98,44 @@
         </div>
     </div>
 
-    <script src="/static/piano-audio.js?v=999"></script>
-    <script src="/static/piano-canvas.js?v=999"></script>
-    <script src="/static/app.js?v=999"></script>
+    <!-- YouTube Extract Modal -->
+    <div id="extractModal" class="modal">
+        <div class="modal-content">
+            <h2>Extraer MIDI de YouTube</h2>
+            <div class="extract-section">
+                <label>URL de YouTube:</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." class="modal-input" style="flex: 1;">
+                    <button id="btnGetTitle" style="padding: 10px 16px; background: #4fc3f7; color: #0a0a1a; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; white-space: nowrap;">Obtener título</button>
+                </div>
+
+                <label>Nombre de la cancion:</label>
+                <input type="text" id="extractName" placeholder="Se llenará automáticamente" class="modal-input">
+
+                <div class="setting-row">
+                    <label>Separar piano (MUY LENTO, ~30min):</label>
+                    <input type="checkbox" id="extractSeparate">
+                </div>
+            </div>
+
+            <div id="extractProgress" class="extract-progress" style="display: none;">
+                <div class="extract-status" id="extractStatus">Iniciando...</div>
+                <div class="extract-bar">
+                    <div class="extract-bar-fill" id="extractBarFill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <div id="extractResult" class="extract-result" style="display: none;"></div>
+
+            <div class="modal-buttons">
+                <button id="btnExtract" class="close-btn">Extraer</button>
+                <button id="btnCloseExtract" class="close-btn" style="background: #666;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/piano-audio.js?v=1021"></script>
+    <script src="/static/piano-canvas.js?v=1021"></script>
+    <script src="/static/app.js?v=1021"></script>
 </body>
 </html>

@@ -36,8 +36,8 @@ def _find_executable(name: str) -> str:
     raise FileNotFoundError(f"{name} not found in virtualenv or PATH")
 
 
-def download_audio(url: str, output_dir: str = "songs") -> str:
-    """Download audio from a YouTube URL as WAV. Returns path to the WAV file."""
+def download_audio(url: str, output_dir: str = "songs") -> tuple[str, str]:
+    """Download audio from a YouTube URL as WAV. Returns (wav_path, title)."""
     os.makedirs(output_dir, exist_ok=True)
     filename = f"{uuid.uuid4().hex[:12]}"
     output_path = os.path.join(output_dir, filename)
@@ -59,4 +59,14 @@ def download_audio(url: str, output_dir: str = "songs") -> str:
     wav_path = f"{output_path}.wav"
     if not os.path.isfile(wav_path):
         raise RuntimeError(f"yt-dlp did not produce WAV file: {wav_path}")
-    return wav_path
+
+    # Get title from yt-dlp
+    cmd_title = [
+        ytdlp,
+        "-e",
+        url
+    ]
+    result_title = subprocess.run(cmd_title, capture_output=True, text=True, env=_get_env(), timeout=30)
+    title = result_title.stdout.strip() if result_title.returncode == 0 else "Extracted"
+
+    return wav_path, title

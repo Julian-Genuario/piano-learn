@@ -3,8 +3,8 @@ class PianoCanvas {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
 
-        this.firstNote = 36;  // C2
-        this.lastNote = 96;   // C7
+        this.firstNote = 21;  // A0 (88 keys default)
+        this.lastNote = 108;  // C8
 
         // Synthesia colors
         this.colors = {
@@ -83,6 +83,19 @@ class PianoCanvas {
         this.render();
     }
 
+    setKeyboardSize(size) {
+        if (size === 61) {
+            this.firstNote = 36;  // C2
+            this.lastNote = 96;   // C7
+        } else {
+            this.firstNote = 21;  // A0
+            this.lastNote = 108;  // C8
+        }
+        this._buildKeyLayout();
+        this._resize();
+        this.render();
+    }
+
     setColors(right, left) {
         this.colors.right = right;
         this.colors.left = left;
@@ -113,7 +126,7 @@ class PianoCanvas {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, this.width, this.height);
 
-        this._drawFallingNotes(ctx);
+        this._drawUpcomingMarkers(ctx);
         this._drawHitLine(ctx);
         this._drawKeyboard(ctx);
     }
@@ -124,82 +137,34 @@ class PianoCanvas {
         ctx.fillRect(0, this.keyboardY - 1, this.width, 2);
     }
 
-    _drawFallingNotes(ctx) {
-        const pps = this.keyboardY / this.window;
-        const gap = 2; // Gap between notes
-
+    _drawUpcomingMarkers(ctx) {
+        // Show upcoming notes as subtle glow on the keyboard area
         for (const note of this.upcomingNotes) {
             const { x, w } = this._getNoteRect(note.note);
             const isRight = note.hand === 'right';
             const color = isRight ? this.colors.right : this.colors.left;
-            const colorDark = isRight ? this.colors.rightDark : this.colors.leftDark;
-            const colorGlow = isRight ? this.colors.rightGlow : this.colors.leftGlow;
 
             const dt = note.start - this.elapsed;
-            const noteBottom = this.keyboardY - dt * pps;
-            let noteH = note.duration * pps;
-            const noteTop = noteBottom - noteH;
+            if (dt < -0.5 || dt > 5) continue;  // Only show notes within 5 seconds
 
-            if (noteBottom < 0 || noteTop > this.keyboardY) continue;
+            // Glow intensity based on how soon the note arrives
+            const alpha = Math.max(0.1, 1 - dt / 3);  // Brighter as it gets closer
 
-            const drawTop = Math.max(0, noteTop);
-            const drawBottom = Math.min(this.keyboardY, noteBottom);
-            let drawH = drawBottom - drawTop;
-            if (drawH <= 0) continue;
-
-            // Ensure minimum visible height
-            if (drawH < 4) drawH = 4;
-
-            const margin = 4;
+            const margin = 3;
             const nx = x + margin;
             const nw = w - margin * 2;
 
-            // Add gap at bottom of note (separation)
-            const effectiveH = drawH - gap;
-            if (effectiveH <= 0) continue;
+            // Subtle glow above keyboard showing upcoming notes
+            const glowHeight = 15;
+            const glowY = this.keyboardY - glowHeight;
 
-            // Dark shadow background
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(nx - 1, drawTop - 1, nw + 2, effectiveH + 2);
+            ctx.fillStyle = color.replace('rgb', 'rgba').replace(')', `, ${alpha * 0.4})`);
+            ctx.fillRect(nx, glowY, nw, glowHeight);
 
-            // Main note body
-            ctx.fillStyle = color;
-            ctx.fillRect(nx, drawTop, nw, effectiveH);
-
-            // Thick outer border - BLACK
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(nx, drawTop, nw, effectiveH);
-
-            // Inner border - COLOR (glow)
-            ctx.strokeStyle = colorGlow;
-            ctx.lineWidth = 1;
-            ctx.strokeRect(nx + 1, drawTop + 1, nw - 2, effectiveH - 2);
-
-            // Left highlight stripe
-            ctx.fillStyle = colorGlow;
-            ctx.globalAlpha = 0.6;
-            ctx.fillRect(nx + 1, drawTop + 1, 4, effectiveH - 2);
-            ctx.globalAlpha = 1;
-
-            // Top bright cap
-            ctx.fillStyle = colorGlow;
-            ctx.globalAlpha = 0.7;
-            ctx.fillRect(nx, drawTop, nw, 4);
-            ctx.globalAlpha = 1;
-
-            // Bottom dark marker
-            ctx.fillStyle = colorDark;
-            ctx.globalAlpha = 0.8;
-            ctx.fillRect(nx, drawTop + effectiveH - 4, nw, 4);
-            ctx.globalAlpha = 1;
-
-            // White outline on note ending
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = 0.4;
-            ctx.strokeRect(nx + 1, drawTop + effectiveH - 5, nw - 2, 4);
-            ctx.globalAlpha = 1;
+            // Brighter edge indicator
+            ctx.strokeStyle = color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(nx, glowY, nw, glowHeight);
         }
     }
 
