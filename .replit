@@ -1,0 +1,5 @@
+run = "python run_server.py --mock"
+modules = ["python-3.10"]
+
+[nix]
+channel = "stable-22_05"
