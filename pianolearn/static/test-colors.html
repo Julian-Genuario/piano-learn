@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Test de Colores - PianoLearn</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .test-section {
+            background: #111;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .color-box {
+            width: 100px;
+            height: 100px;
+            display: inline-block;
+            margin: 10px;
+            border-radius: 4px;
+            border: 2px solid #666;
+        }
+        .blue { background: #1E90FF; }
+        .green { background: #00C853; }
+        .notes-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .note {
+            height: 80px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #000;
+            font-size: 12px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .ok { background: #004d00; color: #0f0; }
+        .error { background: #4d0000; color: #f00; }
+        button {
+            background: #1E90FF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover { background: #0a5ccc; }
+        #song-list { list-style: none; }
+        #song-list li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #222;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #song-list li:hover { background: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test de Colores - PianoLearn</h1>
+
+        <div class="test-section">
+            <h2>1. Colores Esperados</h2>
+            <p>Mano Derecha (Treble):</p>
+            <div class="color-box blue"></div>
+            <p style="margin-top: 10px;">Mano Izquierda (Bass):</p>
+            <div class="color-box green"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Selecciona una Canción</h2>
+            <button onclick="loadSongs()">Cargar Canciones</button>
+            <ul id="song-list"></ul>
+        </div>
+
+        <div class="test-section">
+            <h2>3. Reproductor</h2>
+            <p id="current-song">No hay canción seleccionada</p>
+            <button onclick="playSong()">PLAY</button>
+            <button onclick="stopSong()">STOP</button>
+        </div>
+
+        <div class="test-section">
+            <h2>4. Datos en Tiempo Real</h2>
+            <div id="websocket-status"></div>
+            <div id="notes-display"></div>
+        </div>
+    </div>
+
+    <script>
+        let selectedSong = null;
+        let ws = null;
+        let messageCount = 0;
+
+        // Cargar canciones
+        async function loadSongs() {
+            try {
+                const res = await fetch('/api/songs');
+                const songs = await res.json();
+                const list = document.getElementById('song-list');
+                list.innerHTML = '';
+
+                songs.slice(0, 10).forEach(song => {
+                    const li = document.createElement('li');
+                    li.textContent = song.name;
+                    li.onclick = () => selectSong(song.name);
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                alert('Error cargando canciones: ' + e);
+            }
+        }
+
+        function selectSong(name) {
+            selectedSong = name;
+            document.getElementById('current-song').textContent = 'Seleccionada: ' + name;
+        }
+
+        // Reproducir
+        async function playSong() {
+            if (!selectedSong) {
+                alert('Selecciona una canción primero');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/player/play/${encodeURIComponent(selectedSong)}`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                console.log('Reproduciendo:', data);
+                connectWebSocket();
+            } catch (e) {
+                alert('Error reproduciendo: ' + e);
+            }
+        }
+
+        function stopSong() {
+            if (ws) ws.close();
+            fetch('/api/player/stop', { method: 'POST' });
+        }
+
+        // WebSocket
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws/player`);
+
+            ws.onopen = () => {
+                document.getElementById('websocket-status').innerHTML =
+                    '<div class="status ok">✓ Conectado al WebSocket</div>';
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    messageCount++;
+
+                    // Contar colores
+                    const upcomingRight = data.upcoming.filter(n => n.hand === 'right').length;
+                    const upcomingLeft = data.upcoming.filter(n => n.hand === 'left').length;
+                    const activeRight = data.active.filter(n => n.hand === 'right').length;
+                    const activeLeft = data.active.filter(n => n.hand === 'left').length;
+
+                    // Mostrar estado
+                    let html = `<div class="status ok">Mensaje #${messageCount}</div>`;
+                    html += `<p>Notas ACTIVAS: ${activeRight} AZUL + ${activeLeft} VERDE</p>`;
+                    html += `<p>Notas PROXIMAS: ${upcomingRight} AZUL + ${upcomingLeft} VERDE</p>`;
+
+                    document.getElementById('websocket-status').innerHTML = html;
+
+                    // Mostrar notas próximas
+                    let notesHtml = '<div class="notes-container">';
+                    data.upcoming.slice(0, 12).forEach(note => {
+                        const color = note.hand === 'right' ? 'blue' : 'green';
+                        const label = note.hand === 'right' ? 'D' : 'I';
+                        notesHtml += `<div class="note ${color}">${label}<br>Nota ${note.note}</div>`;
+                    });
+                    notesHtml += '</div>';
+
+                    document.getElementById('notes-display').innerHTML = notesHtml;
+
+                    // Verificación
+                    if (upcomingRight > 0 && upcomingLeft > 0) {
+                        console.log('✓ AMBOS COLORES PRESENTES - FUNCIONA CORRECTAMENTE');
+                    } else if (upcomingRight === 0 && upcomingLeft > 0) {
+                        console.warn('⚠ Solo notas izquierda (verde)');
+                    }
+
+                } catch (e) {
+                    console.error('Error:', e);
+                }
+            };
+
+            ws.onerror = () => {
+                document.getElementById('websocket-status').innerHTML =
+                    '<div class="status error">✗ Error en WebSocket</div>';
+            };
+
+            ws.onclose = () => {
+                document.getElementById('websocket-status').innerHTML =
+                    '<div class="status error">✗ Desconectado</div>';
+            };
+        }
+
+        // Cargar canciones al abrir
+        loadSongs();
+    </script>
+</body>
+</html>
