@@ -148,10 +148,14 @@ class PianoCanvas {
             const drawH = drawBottom - drawTop;
             if (drawH <= 0) continue;
 
-            const margin = this._isBlackKey(note.note) ? 1 : 2;
+            const margin = this._isBlackKey(note.note) ? 2 : 3;
             const nx = x + margin;
             const nw = w - margin * 2;
-            const radius = Math.min(3, nw / 2);
+            const radius = 4;
+
+            // Shadow/Depth effect (draw before main body)
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(nx + 3, drawTop + 3, nw, drawH);
 
             // Main note body - solid block like Synthesia
             ctx.fillStyle = color;
@@ -163,21 +167,32 @@ class PianoCanvas {
             }
             ctx.fill();
 
+            // Strong border - makes note edges clear
+            ctx.strokeStyle = colorDark;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(nx, drawTop, nw, drawH, radius);
+            } else {
+                ctx.rect(nx, drawTop, nw, drawH);
+            }
+            ctx.stroke();
+
             // Left edge highlight (3D depth)
             ctx.fillStyle = colorGlow;
-            ctx.globalAlpha = 0.3;
-            ctx.fillRect(nx, drawTop, 2, drawH);
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(nx, drawTop, 3, drawH);
             ctx.globalAlpha = 1;
 
             // Right edge shadow
             ctx.fillStyle = colorDark;
-            ctx.globalAlpha = 0.4;
-            ctx.fillRect(nx + nw - 2, drawTop, 2, drawH);
+            ctx.globalAlpha = 0.6;
+            ctx.fillRect(nx + nw - 3, drawTop, 3, drawH);
             ctx.globalAlpha = 1;
 
-            // Top cap (rounded bright end)
+            // Top cap (rounded bright end) - more visible
             if (noteTop >= 0) {
-                const capH = Math.min(4, drawH);
+                const capH = Math.min(6, drawH / 3);
                 const capGrad = ctx.createLinearGradient(0, drawTop, 0, drawTop + capH);
                 capGrad.addColorStop(0, colorGlow);
                 capGrad.addColorStop(1, color);
@@ -191,14 +206,23 @@ class PianoCanvas {
                 ctx.fill();
             }
 
+            // Bottom cap - marks where note ends
+            if (drawBottom <= this.keyboardY) {
+                const capH = Math.min(6, drawH / 3);
+                ctx.fillStyle = colorDark;
+                ctx.globalAlpha = 0.5;
+                ctx.fillRect(nx, drawBottom - capH, nw, capH);
+                ctx.globalAlpha = 1;
+            }
+
             // Glow effect when note is touching the keyboard
             if (noteBottom >= this.keyboardY - 5) {
                 ctx.save();
                 ctx.shadowColor = color;
-                ctx.shadowBlur = 25;
+                ctx.shadowBlur = 30;
                 ctx.fillStyle = color;
-                ctx.globalAlpha = 0.6;
-                ctx.fillRect(nx, this.keyboardY - 4, nw, 4);
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(nx, this.keyboardY - 5, nw, 5);
                 ctx.restore();
                 ctx.globalAlpha = 1;
             }
