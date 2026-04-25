@@ -14,4 +14,4 @@ REM Esperar a que inicie
 timeout /t 3 /nobreak >nul
 
 REM Abrir navegador
-start http://localhost:8001
+start http://localhost:8000
