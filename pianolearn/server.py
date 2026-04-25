@@ -186,8 +186,8 @@ def create_app(songs_dir: str = "songs", mock_leds: bool = False) -> FastAPI:
                     scaled_time = elapsed * player.speed
 
                     if state["mode"] == "karaoke":
-                        active = player.get_active_notes(scaled_time)
-                        upcoming = player.get_upcoming_notes(scaled_time, window=3.0)
+                        active = player.get_active_notes(elapsed)
+                        upcoming = player.get_upcoming_notes(elapsed, window=3.0)
                     else:
                         active = player.get_waiting_notes()
                         upcoming = active
